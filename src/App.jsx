@@ -624,7 +624,7 @@ function LecturerInfoCard({ lecturer, courses }) {
   return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-black text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div><div className="grid gap-4 sm:grid-cols-2"><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-bold text-slate-800">{lecturer.email}</p></Card><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-bold text-slate-800">{lecturer.phone}</p></Card></div><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></Card><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 space-y-2">{lecturer.plotted.map((code) => <div key={code} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm"><b className="text-blue-700">{courseTitleByCode(courses, code)}</b><span className="ml-2 text-xs text-slate-500">({code})</span></div>)}</div></Card></div>;
 }
 
-function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses }) {
+function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode }) {
   const importInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [degree, setDegree] = useState("All");
@@ -651,20 +651,25 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setTermLecturers((prev) => prev.some((lecturer) => lecturer.id === item.id) ? prev.map((lecturer) => lecturer.id === item.id ? { ...lecturer, ...item, available: availableSlots, plotted: lecturer.plotted } : lecturer) : [{ ...item, available: availableSlots, plotted: [] }, ...prev]);
     setModal(null);
   };
-  const importRows = (items) => {
+  const importRows = async (items) => {
+    if (!selectedTermCode) throw new Error("Create or select a term before importing lecturer data.");
+    const directoryRows = items.map((item) => {
+      const existing = directoryById.get(item.id);
+      return { ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available };
+    });
+    const plottingRows = items.map((item) => buildTermPlottingRow(selectedTermCode, item));
+    if (USE_SUPABASE) {
+      await upsertRows("lecturers", directoryRows, "id");
+      await upsertRows("term_plottings", plottingRows, "id");
+    }
     setLecturers((prev) => {
       const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
-      items.forEach((item) => {
-        const existing = byId.get(item.id);
-        byId.set(item.id, { ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available });
-      });
+      directoryRows.forEach((item) => byId.set(item.id, item));
       return Array.from(byId.values());
     });
     setTermLecturers((prev) => {
       const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
-      items.forEach((item) => {
-        byId.set(item.id, { ...(byId.get(item.id) || item), ...item });
-      });
+      items.forEach((item) => byId.set(item.id, { ...(byId.get(item.id) || item), ...item }));
       return Array.from(byId.values());
     });
   };
@@ -676,7 +681,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
       const rawRows = file.name.toLowerCase().endsWith(".csv") ? rowsToObjects(parseCSV(await file.text())) : await parseXLSX(file);
       const imported = mapImportedLecturers(rawRows, courses);
       if (!imported.length) throw new Error("No valid lecturer rows found. Use the exported XLSX template columns.");
-      importRows(imported);
+      await importRows(imported);
       setImportMessage(`Imported ${imported.length} lecturer ${imported.length === 1 ? "row" : "rows"}.`);
     } catch (error) {
       setImportMessage(error.message || "Import failed.");
@@ -860,7 +865,7 @@ export default function App() {
   }, [lecturers, effectiveSelectedTermCode]);
   const pageLecturers = active === "dashboard" || active === "lecturers" || active === "plotting" ? termScopedLecturers : lecturers;
   const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
-  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, onActiveTermChange: setSelectedTermCode };
+  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, onActiveTermChange: setSelectedTermCode };
 
   if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
 
