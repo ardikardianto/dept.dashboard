@@ -750,7 +750,107 @@ function LoginScreen({ onLogin }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async () => { setError(""); setBusy(true); try { const loggedInEmail = await signIn(email, password); onLogin(loggedInEmail); } catch (err) { setError(err.message || "Authentication failed."); } finally { setBusy(false); } };
-  return <div className="min-h-screen bg-slate-50 lg:grid lg:grid-cols-[1.05fr_.95fr]"><section className="relative flex min-h-[34vh] overflow-hidden bg-blue-950 px-5 py-6 text-white sm:min-h-[38vh] sm:px-8 lg:min-h-screen lg:px-10 lg:py-10"><div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,.22),_transparent_34%),linear-gradient(rgba(15,64,140,.82),rgba(12,46,98,.94))]" /><div className="relative flex w-full flex-col justify-between gap-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-white/15 p-2.5"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black sm:text-base">Universitas Terbuka</p><p className="text-[10px] uppercase tracking-[0.28em] text-blue-100">English Department</p></div></div><div className="max-w-xl"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.32em] text-yellow-300">Lecturer Database</p><h2 className="text-3xl font-black leading-tight sm:text-4xl lg:text-5xl">Manage lecturers, plot courses, see the big picture.</h2><p className="mt-4 max-w-md text-sm leading-6 text-blue-100 sm:text-base">A single database for degrees, expertise, availability and teaching load across the department.</p></div><p className="hidden text-xs text-blue-100/70 lg:block">© 2026 Universitas Terbuka — English Department</p></div></section><section className="flex items-center justify-center px-5 py-8 sm:px-8 lg:px-10"><Card className="w-full max-w-sm border-slate-200 p-5 shadow-sm sm:max-w-md sm:p-6 lg:p-7"><p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Restricted access</p><h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Sign in</h1><p className="mt-2 text-sm leading-6 text-slate-500">{USE_SUPABASE ? "Use your existing Supabase account to access department data." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}</p><div className="mt-6 space-y-3"><TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" /><TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />{error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}<Button className="w-full py-2.5" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>{busy ? "Processing..." : "Sign in"}</Button></div></Card></section></div>;
+  return (
+    <div className="min-h-screen bg-white px-5 py-5 text-slate-950 sm:px-8 lg:px-12">
+      <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
+        <motion.nav
+          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-slate-100 bg-white px-5 py-4 shadow-[0_22px_70px_rgba(15,23,42,0.08)] sm:px-7 lg:px-9"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-700 text-white shadow-sm">
+              <Icons.graduation className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-700">English Department</p>
+            </div>
+          </div>
+
+          <div className="flex items-center rounded-full bg-slate-100 p-1 text-sm font-black">
+            <button type="button" className="rounded-full px-4 py-2 text-slate-700 sm:px-5">
+              Lecturer Database
+            </button>
+            <button type="button" className="rounded-full bg-blue-700 px-5 py-2 text-white shadow-sm sm:px-6">
+              Login
+            </button>
+          </div>
+        </motion.nav>
+
+        <main className="relative mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-16">
+          <motion.div
+            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+            className="relative z-10"
+          >
+            <div className="mb-7 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+              Lecturer Database
+            </div>
+            <h1 className="max-w-2xl text-5xl font-black leading-[0.96] tracking-tight text-slate-950 sm:text-6xl lg:text-7xl">
+              Manage lecturers, plot courses, see the big picture.
+            </h1>
+            <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">
+              A single database for degrees, expertise, availability and teaching load across the department.
+            </p>
+            <p className="mt-10 hidden text-xs font-semibold text-slate-400 lg:block">© 2026 Universitas Terbuka — English Department</p>
+          </motion.div>
+
+          <div className="relative mx-auto w-full max-w-2xl lg:mx-0">
+            <motion.div
+              initial={{ opacity: 0, x: -20, rotate: -3 }}
+              animate={{ opacity: 1, x: 0, rotate: -2 }}
+              transition={{ duration: 0.65, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute -left-8 top-8 hidden rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] lg:block"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-yellow-500">Restricted access</p>
+              <p className="mt-1 text-lg font-black text-slate-950">Department data</p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -18, rotate: 4 }}
+              animate={{ opacity: 1, x: 0, rotate: 3 }}
+              transition={{ duration: 0.65, delay: 0.48, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute -bottom-7 left-8 hidden rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] lg:block"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-700">Database</p>
+              <p className="mt-1 text-lg font-black text-slate-950">{USE_SUPABASE ? "Configured" : "Not configured"}</p>
+            </motion.div>
+
+            <motion.section
+              initial={{ opacity: 0, y: 28, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.72, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="relative z-10 ml-auto w-full rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.1)] sm:p-7 lg:max-w-md lg:p-8"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Restricted access</p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Sign in</h2>
+              <p className="mt-3 text-base leading-7 text-slate-500">
+                {USE_SUPABASE ? "Welcome back! Please sign in to your account." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}
+              </p>
+
+              <div className="mt-6 space-y-4">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-black text-slate-950">Email</span>
+                  <TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-black text-slate-950">Password</span>
+                  <TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />
+                </label>
+                {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
+                <Button className="w-full !rounded-2xl !bg-blue-700 py-3 text-base hover:!bg-blue-800" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>
+                  {busy ? "Processing..." : "Sign in"}
+                </Button>
+              </div>
+            </motion.section>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
