@@ -423,12 +423,17 @@ function getImportedValue(row, names) {
   return match?.[1] ?? "";
 }
 
+function isImportRowBlank(row) {
+  return Object.values(row).every((value) => String(value ?? "").trim() === "");
+}
+
 function mapImportedLecturers(rows, courses) {
-  return rows.map((row) => {
+  return rows.filter((row) => !isImportRowBlank(row)).map((row, index) => {
     const plotted = splitList(getImportedValue(row, ["Plotted_Course_Codes", "Plotted Course Codes", "Plotted Courses", "Plotted", "Courses"]));
     const knownPlotted = plotted.filter((code) => !courses.length || courses.some((course) => course.code === code));
+    const importedId = String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim();
     return {
-      id: String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim(),
+      id: importedId || `imported-${Date.now()}-${index + 1}`,
       degree: String(getImportedValue(row, ["Degree"])).trim(),
       name: String(getImportedValue(row, ["Name", "Full Name"])).trim(),
       email: String(getImportedValue(row, ["Email"])).trim(),
@@ -437,7 +442,7 @@ function mapImportedLecturers(rows, courses) {
       plotted: knownPlotted,
       available: Number(getImportedValue(row, ["Available_Slots", "Available Slots", "Available"])) || 0,
     };
-  }).filter((row) => row.id && row.name && row.email);
+  });
 }
 
 function getAccessToken() {
@@ -612,7 +617,7 @@ function LecturerForm({ initial, onSave, onClose }) {
     const expertiseText = form.expertiseText ?? form.expertise?.join(", ") ?? "";
     onSave({ id: form.id, degree: form.degree, name: form.name, email: form.email, phone: form.phone, available: Number(form.available ?? 0), expertise: uniq(expertiseText.split(",").map((item) => item.trim())), plotted: Array.isArray(form.plotted) ? form.plotted : [] });
   };
-  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainInput label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><PlainInput label="Expertise, separated by comma" value={form.expertiseText ?? form.expertise?.join(", ") ?? ""} onChange={(value) => setForm({ ...form, expertiseText: value })} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.name || !form.email}>Save lecturer</Button></div></div>;
+  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainInput label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><PlainInput label="Expertise, separated by comma" value={form.expertiseText ?? form.expertise?.join(", ") ?? ""} onChange={(value) => setForm({ ...form, expertiseText: value })} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.id}>Save lecturer</Button></div></div>;
 }
 
 function LecturerInfoCard({ lecturer, courses }) {
