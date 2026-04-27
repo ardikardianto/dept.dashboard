@@ -45,6 +45,19 @@ const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) =
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
 const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
 
+function normalizeLecturer(row) {
+  return {
+    id: String(row.id || "").trim(),
+    degree: String(row.degree || "").trim(),
+    name: String(row.name || "").trim(),
+    email: String(row.email || "").trim(),
+    phone: String(row.phone || "").trim(),
+    expertise: Array.isArray(row.expertise) ? row.expertise : [],
+    plotted: Array.isArray(row.plotted) ? row.plotted : [],
+    available: Number(row.available ?? 0),
+  };
+}
+
 function normalizeTermPlotting(row) {
   return {
     id: row.id || termPlottingId(row.term_code, row.lecturer_id),
@@ -432,7 +445,7 @@ function mapImportedLecturers(rows, courses) {
     const plotted = splitList(getImportedValue(row, ["Plotted_Course_Codes", "Plotted Course Codes", "Plotted Courses", "Plotted", "Courses"]));
     const knownPlotted = plotted.filter((code) => !courses.length || courses.some((course) => course.code === code));
     const importedId = String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim();
-    return {
+    return normalizeLecturer({
       id: importedId || `imported-${Date.now()}-${index + 1}`,
       degree: String(getImportedValue(row, ["Degree"])).trim(),
       name: String(getImportedValue(row, ["Name", "Full Name"])).trim(),
@@ -441,7 +454,7 @@ function mapImportedLecturers(rows, courses) {
       expertise: splitList(getImportedValue(row, ["Expertise"])),
       plotted: knownPlotted,
       available: Number(getImportedValue(row, ["Available_Slots", "Available Slots", "Available"])) || 0,
-    };
+    });
   });
 }
 
@@ -655,9 +668,9 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     if (!selectedTermCode) throw new Error("Create or select a term before importing lecturer data.");
     const directoryRows = items.map((item) => {
       const existing = directoryById.get(item.id);
-      return { ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available };
+      return normalizeLecturer({ ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available });
     });
-    const plottingRows = items.map((item) => buildTermPlottingRow(selectedTermCode, item));
+    const plottingRows = items.map((item) => normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, item)));
     if (USE_SUPABASE) {
       await upsertRows("lecturers", directoryRows, "id");
       await upsertRows("term_plottings", plottingRows, "id");
@@ -780,7 +793,7 @@ export default function App() {
           fetchTable("term_plottings", "id"),
         ]);
         if (cancelled) return;
-        setLecturers(Array.isArray(lecturerRows) ? lecturerRows : []);
+        setLecturers(Array.isArray(lecturerRows) ? lecturerRows.map(normalizeLecturer) : []);
         setCourses(Array.isArray(courseRows) ? courseRows : []);
         setTerms(Array.isArray(termRows) ? termRows : []);
         setTermPlottings(Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : []);
