@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart as RePieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -28,32 +28,9 @@ const Icons = {
 };
 
 const department = { name: "UT English Dept.", email: "sastra.inggris@ecampus.ut.ac.id", subtitle: "Lecturer Admin" };
-const DEMO_CREDENTIALS = { email: "admin@ut.ac.id", password: "admin123" };
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-
-const starterCourses = [
-  ["FSSI4101", "Basic Reading", 3], ["FSSI4102", "Basic Writing", 3], ["FSSI4103", "Pengantar Ilmu Sastra", 3],
-  ["FSSI4104", "Intermediate Writing", 3], ["FSSI4105", "Pengantar Linguistik Umum", 3], ["FSSI4106", "English for Translation", 3],
-  ["FSSI4201", "Teori dan Masalah Penerjemahan", 3], ["FSSI4202", "Tata Bahasa Indonesia dan Komposisi", 4],
-  ["FSSI4203", "Semantics", 3], ["FSSI4205", "Penerjemahan Karya Fiksi", 3], ["FSSI4206", "English Morpho-Syntax", 3],
-  ["FSSI4208", "Analisis Teks dalam Penerjemahan", 3], ["FSSI4210", "Pragmatik", 2],
-  ["FSSI4402", "Translation: Economic, Finance, and Industry", 3], ["FSSI4460", "Artikel Ilmiah", 3],
-].map(([code, title, credits]) => ({ code, title, credits }));
-
-const starterLecturers = [
-  { id: "02004291", degree: "M.A.", name: "Ardik Ardianto", email: "ardik@ecampus.ut.ac.id", phone: "082244605209", expertise: ["Translation", "Systemic Functional Linguistics"], plotted: ["FSSI4101", "FSSI4205", "FSSI4402", "FSSI4460"], available: 4 },
-  { id: "02004312", degree: "M.Hum.", name: "Widyasari", email: "widyasari@ecampus.ut.ac.id", phone: "081290001122", expertise: ["Sociolinguistics", "Pragmatics"], plotted: ["FSSI4203", "FSSI4210", "FSSI4208"], available: 3 },
-  { id: "02004403", degree: "Ph.D.", name: "Dewi Kurnia", email: "dewi.kurnia@ecampus.ut.ac.id", phone: "081388113355", expertise: ["Morpho-Syntax", "Academic Writing"], plotted: ["FSSI4102", "FSSI4104", "FSSI4206"], available: 2 },
-  { id: "02004577", degree: "M.A.", name: "Rangga Pratama", email: "rangga@ecampus.ut.ac.id", phone: "087700771818", expertise: ["Literary Studies", "Reading"], plotted: ["FSSI4103", "FSSI4101"], available: 3 },
-  { id: "02004621", degree: "M.Hum.", name: "Nadia Putri", email: "nadia.putri@ecampus.ut.ac.id", phone: "081355889900", expertise: ["Translation"], plotted: ["FSSI4201"], available: 1 },
-];
-
-const starterTerms = [
-  { code: "2026-1", name: "2025/2026 — Semester 2 (Genap)", ay: "2025/2026", semester: "Semester 2", active: true },
-  { code: "2025-2", name: "2025/2026 — Semester 1 (Ganjil)", ay: "2025/2026", semester: "Semester 1", active: false },
-];
 
 const nav = [
   { id: "dashboard", label: "Dashboard", icon: Icons.dashboard }, { id: "lecturers", label: "Lecturers", icon: Icons.users },
@@ -99,19 +76,31 @@ function getPlottedCountData(lecturers) {
 }
 
 function runTests() {
-  console.assert(starterCourses.length > 0, "Courses should not be empty");
-  console.assert(starterLecturers.length > 0, "Lecturers should not be empty");
-  console.assert(starterTerms.filter((term) => term.active).length === 1, "Exactly one term should be active");
-  const courseCodes = new Set(starterCourses.map((course) => course.code));
-  const missingCodes = starterLecturers.flatMap((lecturer) => lecturer.plotted.filter((code) => !courseCodes.has(code)));
+  const testCourses = [
+    { code: "COURSE101", title: "Basic Reading", credits: 3 },
+    { code: "COURSE102", title: "Academic Writing", credits: 3 },
+  ];
+  const testLecturers = [
+    { id: "LECT001", degree: "M.A.", name: "Test Lecturer", email: "lecturer@example.com", phone: "0800000000", expertise: ["Reading"], plotted: ["COURSE101"], available: 1 },
+    { id: "LECT002", degree: "Ph.D.", name: "Second Lecturer", email: "second@example.com", phone: "0800000001", expertise: ["Writing"], plotted: ["COURSE101", "COURSE102"], available: 4 },
+  ];
+  const testTerms = [
+    { code: "TERM001", name: "Active Term", ay: "2025/2026", semester: "Semester 2", active: true },
+    { code: "TERM002", name: "Previous Term", ay: "2025/2026", semester: "Semester 1", active: false },
+  ];
+  console.assert(testCourses.length > 0, "Courses should not be empty");
+  console.assert(testLecturers.length > 0, "Lecturers should not be empty");
+  console.assert(testTerms.filter((term) => term.active).length === 1, "Exactly one term should be active");
+  const courseCodes = new Set(testCourses.map((course) => course.code));
+  const missingCodes = testLecturers.flatMap((lecturer) => lecturer.plotted.filter((code) => !courseCodes.has(code)));
   console.assert(missingCodes.length === 0, `Missing course codes: ${missingCodes.join(", ")}`);
-  const exportRows = buildLecturerExportRows(starterLecturers, starterCourses);
-  console.assert(exportRows.length === starterLecturers.length, "Export row count should match lecturer count");
+  const exportRows = buildLecturerExportRows(testLecturers, testCourses);
+  console.assert(exportRows.length === testLecturers.length, "Export row count should match lecturer count");
   console.assert(exportRows[0].Plotted_Course_Names.includes("Basic Reading"), "Export should include plotted course names");
-  console.assert(plottedCourseTitles(starterLecturers[0], starterCourses).includes("Basic Reading"), "Lecturer display should resolve plotted course names");
+  console.assert(plottedCourseTitles(testLecturers[0], testCourses).includes("Basic Reading"), "Lecturer display should resolve plotted course names");
   console.assert(plottedCourseCountLabel(1) === "1 plotted course", "Singular label should work");
   console.assert(plottedCourseCountLabel(2) === "2 plotted courses", "Plural label should work");
-  console.assert(getPlottedCountData(starterLecturers).some((item) => item.name === "1 plotted course"), "Dashboard data should include 1 plotted course");
+  console.assert(getPlottedCountData(testLecturers).some((item) => item.name === "1 plotted course"), "Dashboard data should include 1 plotted course");
   console.assert(availabilityTone(0) === "red", "0 available should be red");
   console.assert(availabilityTone(1) === "orange", "1 available should be orange");
   console.assert(availabilityTone(2) === "amber", "2 available should be yellow/amber");
@@ -168,7 +157,11 @@ async function supabaseRequest(path, options = {}) {
   const response = await fetch(`${SUPABASE_URL}${path}`, options);
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(data?.message || data?.msg || data?.error_description || "Supabase request failed.");
+  if (!response.ok) {
+    const error = new Error(data?.message || data?.msg || data?.error_description || "Supabase request failed.");
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -207,13 +200,7 @@ async function syncTable(table, rows, key) {
 }
 
 async function signIn(email, password) {
-  if (!USE_SUPABASE) {
-    if (email === DEMO_CREDENTIALS.email && password === DEMO_CREDENTIALS.password) {
-      localStorage.setItem("ut_user_email", email);
-      return email;
-    }
-    throw new Error("Invalid credentials.");
-  }
+  if (!USE_SUPABASE) throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable access.");
   const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
@@ -226,21 +213,17 @@ async function signIn(email, password) {
   return data.user?.email || email;
 }
 
-async function signUp(email, password) {
-  if (!USE_SUPABASE) throw new Error("Sign up is currently unavailable in demo mode.");
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error_description || data.msg || "Sign up failed.");
-  return data;
-}
-
 function signOut() {
   localStorage.removeItem("ut_user_email");
   localStorage.removeItem("ut_supabase_access_token");
+}
+
+function getStoredUserEmail() {
+  if (!USE_SUPABASE || !getAccessToken()) {
+    signOut();
+    return "";
+  }
+  return localStorage.getItem("ut_user_email") || "";
 }
 
 function Button({ children, variant = "primary", className = "", ...props }) {
@@ -320,7 +303,7 @@ function Dashboard({ lecturers, courses }) {
 }
 
 function LecturerForm({ initial, courses, onSave, onClose }) {
-  const [form, setForm] = useState(initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", expertiseText: "", plottedText: "", available: 0 });
+  const [form, setForm] = useState(() => initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", expertiseText: "", plottedText: "", available: 0 });
   const save = () => {
     const expertiseText = form.expertiseText ?? form.expertise?.join(", ") ?? "";
     const plottedText = form.plottedText ?? form.plotted?.join(", ") ?? "";
@@ -385,38 +368,45 @@ function Terms({ terms, setTerms }) {
   return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-black text-slate-950">{term.name}</p><p className="text-sm text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
-function LoginMock({ onLogin }) {
-  const [mode, setMode] = useState("signin");
+function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const submit = async () => { setError(""); setMessage(""); setBusy(true); try { if (mode === "signup") { if (password.length < 6) throw new Error("Password must be at least 6 characters."); if (password !== confirmPassword) throw new Error("Password confirmation does not match."); await signUp(email, password); setMessage("Account created. Please check your email if confirmation is enabled, then sign in."); setMode("signin"); setPassword(""); setConfirmPassword(""); } else { const loggedInEmail = await signIn(email, password); onLogin(loggedInEmail); } } catch (err) { setError(err.message || "Authentication failed."); } finally { setBusy(false); } };
-  return <div className="min-h-screen bg-slate-50 lg:grid lg:grid-cols-[1.05fr_.95fr]"><section className="relative flex min-h-[34vh] overflow-hidden bg-blue-950 px-5 py-6 text-white sm:min-h-[38vh] sm:px-8 lg:min-h-screen lg:px-10 lg:py-10"><div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,.22),_transparent_34%),linear-gradient(rgba(15,64,140,.82),rgba(12,46,98,.94))]" /><div className="relative flex w-full flex-col justify-between gap-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-white/15 p-2.5"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black sm:text-base">Universitas Terbuka</p><p className="text-[10px] uppercase tracking-[0.28em] text-blue-100">English Department</p></div></div><div className="max-w-xl"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.32em] text-yellow-300">Lecturer Database</p><h2 className="text-3xl font-black leading-tight sm:text-4xl lg:text-5xl">Manage lecturers, plot courses, see the big picture.</h2><p className="mt-4 max-w-md text-sm leading-6 text-blue-100 sm:text-base">A single database for degrees, expertise, availability and teaching load across the department.</p></div><p className="hidden text-xs text-blue-100/70 lg:block">© 2026 Universitas Terbuka — English Department</p></div></section><section className="flex items-center justify-center px-5 py-8 sm:px-8 lg:px-10"><Card className="w-full max-w-sm border-slate-200 p-5 shadow-sm sm:max-w-md sm:p-6 lg:p-7"><div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1 text-sm font-bold"><button onClick={() => { setMode("signin"); setError(""); setMessage(""); }} className={`rounded-lg px-3 py-2 transition ${mode === "signin" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>Sign in</button><button onClick={() => { setMode("signup"); setError(""); setMessage(""); }} className={`rounded-lg px-3 py-2 transition ${mode === "signup" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>Sign up</button></div><p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Restricted access</p><h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">{mode === "signin" ? "Sign in" : "Create account"}</h1><p className="mt-2 text-sm leading-6 text-slate-500">{USE_SUPABASE ? (mode === "signin" ? "Use your registered Supabase credentials." : "Register a new account through Supabase Auth.") : "Demo mode: admin@ut.ac.id / admin123."}</p><div className="mt-6 space-y-3"><TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" /><TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />{mode === "signup" && <TextInput icon={Icons.check} value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" type="password" />}{message && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{message}</p>}{error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}<Button className="w-full py-2.5" onClick={submit} disabled={busy || !email || !password || (mode === "signup" && !confirmPassword)}>{busy ? "Processing..." : mode === "signin" ? "Sign in" : "Create account"}</Button></div></Card></section></div>;
+  const submit = async () => { setError(""); setBusy(true); try { const loggedInEmail = await signIn(email, password); onLogin(loggedInEmail); } catch (err) { setError(err.message || "Authentication failed."); } finally { setBusy(false); } };
+  return <div className="min-h-screen bg-slate-50 lg:grid lg:grid-cols-[1.05fr_.95fr]"><section className="relative flex min-h-[34vh] overflow-hidden bg-blue-950 px-5 py-6 text-white sm:min-h-[38vh] sm:px-8 lg:min-h-screen lg:px-10 lg:py-10"><div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,.22),_transparent_34%),linear-gradient(rgba(15,64,140,.82),rgba(12,46,98,.94))]" /><div className="relative flex w-full flex-col justify-between gap-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-white/15 p-2.5"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black sm:text-base">Universitas Terbuka</p><p className="text-[10px] uppercase tracking-[0.28em] text-blue-100">English Department</p></div></div><div className="max-w-xl"><p className="mb-3 text-[10px] font-black uppercase tracking-[0.32em] text-yellow-300">Lecturer Database</p><h2 className="text-3xl font-black leading-tight sm:text-4xl lg:text-5xl">Manage lecturers, plot courses, see the big picture.</h2><p className="mt-4 max-w-md text-sm leading-6 text-blue-100 sm:text-base">A single database for degrees, expertise, availability and teaching load across the department.</p></div><p className="hidden text-xs text-blue-100/70 lg:block">© 2026 Universitas Terbuka — English Department</p></div></section><section className="flex items-center justify-center px-5 py-8 sm:px-8 lg:px-10"><Card className="w-full max-w-sm border-slate-200 p-5 shadow-sm sm:max-w-md sm:p-6 lg:p-7"><p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Restricted access</p><h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">Sign in</h1><p className="mt-2 text-sm leading-6 text-slate-500">{USE_SUPABASE ? "Use your existing Supabase account to access department data." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}</p><div className="mt-6 space-y-3"><TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" /><TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />{error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}<Button className="w-full py-2.5" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>{busy ? "Processing..." : "Sign in"}</Button></div></Card></section></div>;
 }
 
 export default function App() {
   const [active, setActive] = useState("dashboard");
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [userEmail, setUserEmail] = useState(localStorage.getItem("ut_user_email") || "");
-  const [lecturers, setLecturers] = useState(starterLecturers);
-  const [courses, setCourses] = useState(starterCourses);
-  const [terms, setTerms] = useState(starterTerms);
-  const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Connecting..." : "Demo mode");
-  const hydratedRef = useRef(!USE_SUPABASE);
+  const [userEmail, setUserEmail] = useState(getStoredUserEmail);
+  const [lecturers, setLecturers] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [terms, setTerms] = useState([]);
+  const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Signed out" : "Supabase not configured");
+  const [isHydrated, setIsHydrated] = useState(false);
+  const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
+  const setHydrated = useCallback((value) => {
+    hydratedRef.current = value;
+    setIsHydrated(value);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     async function loadDatabase() {
       if (!USE_SUPABASE || !userEmail || !getAccessToken()) {
-        hydratedRef.current = !USE_SUPABASE;
+        setHydrated(false);
+        if (userEmail) {
+          signOut();
+          setUserEmail("");
+        }
         return;
       }
       try {
+        setHydrated(false);
         setDbStatus("Loading database...");
         const [lecturerRows, courseRows, termRows] = await Promise.all([
           fetchTable("lecturers", "name"),
@@ -424,19 +414,28 @@ export default function App() {
           fetchTable("academic_terms", "code"),
         ]);
         if (cancelled) return;
-        if (Array.isArray(lecturerRows) && lecturerRows.length) setLecturers(lecturerRows);
-        if (Array.isArray(courseRows) && courseRows.length) setCourses(courseRows);
-        if (Array.isArray(termRows) && termRows.length) setTerms(termRows);
-        hydratedRef.current = true;
+        setLecturers(Array.isArray(lecturerRows) ? lecturerRows : []);
+        setCourses(Array.isArray(courseRows) ? courseRows : []);
+        setTerms(Array.isArray(termRows) ? termRows : []);
+        setHydrated(true);
         setDbStatus("Supabase connected");
       } catch (error) {
-        hydratedRef.current = true;
+        setHydrated(false);
+        if (error.status === 401 || error.status === 403) {
+          signOut();
+          setUserEmail("");
+          setLecturers([]);
+          setCourses([]);
+          setTerms([]);
+          setDbStatus("Session expired. Please sign in again.");
+          return;
+        }
         setDbStatus(error.message || "Database load failed");
       }
     }
     loadDatabase();
     return () => { cancelled = true; };
-  }, [userEmail]);
+  }, [setHydrated, userEmail]);
 
   useEffect(() => {
     if (!USE_SUPABASE || !userEmail || !hydratedRef.current || syncingRef.current) return;
@@ -460,21 +459,24 @@ export default function App() {
   }, [lecturers, courses, terms, userEmail]);
 
   const handleLogin = (email) => {
-    hydratedRef.current = !USE_SUPABASE;
+    setHydrated(false);
     setUserEmail(email);
   };
 
   const handleLogout = () => {
     signOut();
-    hydratedRef.current = !USE_SUPABASE;
+    setHydrated(false);
     setUserEmail("");
-    setDbStatus(USE_SUPABASE ? "Signed out" : "Demo mode");
+    setLecturers([]);
+    setCourses([]);
+    setTerms([]);
+    setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   };
 
   const Page = { dashboard: Dashboard, lecturers: Lecturers, plotting: Plotting, courses: Courses, terms: Terms }[active];
   const props = { lecturers, setLecturers, courses, setCourses, terms, setTerms };
 
-  if (!userEmail) return <LoginMock onLogin={handleLogin} />;
+  if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
 
-  return <div className="min-h-screen bg-slate-50 text-slate-900"><div className="flex min-h-screen items-stretch"><Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen} collapsed={collapsed} setCollapsed={setCollapsed} onLogout={handleLogout} /><main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={USE_SUPABASE ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} setOpen={setOpen} /><motion.div key={active} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main></div></div>;
+  return <div className="min-h-screen bg-slate-50 text-slate-900"><div className="flex min-h-screen items-stretch"><Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen} collapsed={collapsed} setCollapsed={setCollapsed} onLogout={handleLogout} /><main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} setOpen={setOpen} /><motion.div key={active} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main></div></div>;
 }
