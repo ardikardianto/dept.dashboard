@@ -43,6 +43,39 @@ const includes = (value, query) => String(value || "").toLowerCase().includes(St
 const courseTitleByCode = (courses, code) => courses.find((course) => course.code === code)?.title || code;
 const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) => courseTitleByCode(courses, code));
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
+const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
+
+function normalizeTermPlotting(row) {
+  return {
+    id: row.id || termPlottingId(row.term_code, row.lecturer_id),
+    term_code: row.term_code,
+    lecturer_id: row.lecturer_id,
+    plotted: Array.isArray(row.plotted) ? row.plotted : [],
+    available: Number(row.available ?? 0),
+  };
+}
+
+function buildTermPlottingRow(termCode, lecturer) {
+  return {
+    id: termPlottingId(termCode, lecturer.id),
+    term_code: termCode,
+    lecturer_id: lecturer.id,
+    plotted: Array.isArray(lecturer.plotted) ? lecturer.plotted : [],
+    available: Number(lecturer.available ?? 0),
+  };
+}
+
+function getTermScopedLecturers(lecturers, termPlottings, termCode) {
+  const rows = new Map(termPlottings.filter((row) => row.term_code === termCode).map((row) => [row.lecturer_id, row]));
+  return lecturers.map((lecturer) => {
+    const termRow = rows.get(lecturer.id);
+    return {
+      ...lecturer,
+      plotted: termRow?.plotted || [],
+      available: Number(termRow?.available ?? 0),
+    };
+  });
+}
 
 function availabilityTone(value) {
   const n = Number(value);
@@ -101,6 +134,9 @@ function runTests() {
   console.assert(plottedCourseCountLabel(1) === "1 plotted course", "Singular label should work");
   console.assert(plottedCourseCountLabel(2) === "2 plotted courses", "Plural label should work");
   console.assert(getPlottedCountData(testLecturers).some((item) => item.name === "1 plotted course"), "Dashboard data should include 1 plotted course");
+  const scopedLecturers = getTermScopedLecturers(testLecturers, [buildTermPlottingRow("TERM002", { ...testLecturers[0], plotted: ["COURSE102"], available: 3 })], "TERM002");
+  console.assert(scopedLecturers[0].plotted.includes("COURSE102"), "Term plotting should override lecturer plotting");
+  console.assert(scopedLecturers[1].plotted.length === 0, "Missing term plotting should stay empty for a new term");
   console.assert(availabilityTone(0) === "red", "0 available should be red");
   console.assert(availabilityTone(1) === "orange", "1 available should be orange");
   console.assert(availabilityTone(2) === "amber", "2 available should be yellow/amber");
@@ -276,7 +312,7 @@ function Sidebar({ active, setActive, open, setOpen, collapsed, setCollapsed, on
   return <aside className={`fixed inset-y-0 left-0 z-40 min-h-screen border-r border-slate-200 bg-white transition-all duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${collapsed ? "lg:w-24" : "lg:w-72"} ${open ? "translate-x-0 w-72" : "-translate-x-full w-72"}`}><div className={`flex h-full min-h-screen flex-col p-4 lg:min-h-0 ${collapsed ? "lg:items-center" : ""}`}><div className={`mb-7 flex w-full items-center ${collapsed ? "lg:justify-center" : "justify-between"}`}><div className="flex items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-700 text-white"><Icons.graduation className="h-6 w-6" /></div>{!collapsed && <div><p className="font-black text-slate-950">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{department.subtitle}</p></div>}</div><button className="lg:hidden" onClick={() => setOpen(false)}><Icons.x /></button></div><button onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} className={`mb-5 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm hover:bg-slate-50 lg:flex ${collapsed ? "" : "ml-auto"}`}><svg viewBox="0 0 24 24" className={`h-5 w-5 text-slate-600 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg></button><nav className="w-full space-y-2">{nav.map((item) => { const Icon = item.icon; return <button key={item.id} title={item.label} onClick={() => { setActive(item.id); setOpen(false); }} className={`flex w-full items-center rounded-xl py-3 text-sm font-bold transition ${collapsed ? "lg:justify-center lg:px-0" : "gap-3 px-4"} ${active === item.id ? "bg-blue-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}><Icon />{!collapsed && <span>{item.label}</span>}</button>; })}</nav><div className={`mt-auto w-full space-y-3 ${collapsed ? "lg:flex lg:flex-col lg:items-center" : ""}`}>{!collapsed && <div><p className="text-xs font-bold text-slate-700">{department.email}</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Admin</p></div>}<Button variant="secondary" onClick={onLogout} className={collapsed ? "lg:w-11 lg:px-0" : "w-full justify-start"}><Icons.logout className="h-4 w-4" />{!collapsed && <span>Logout</span>}</Button></div></div></aside>;
 }
 
-function Header({ active, setOpen, activeTermLabel }) {
+function Header({ active, setOpen, terms, selectedTermCode, setSelectedTermCode }) {
   const titles = {
     dashboard: ["Overview", "Department Dashboard", "Live infographics of lecturer distribution, expertise, teaching load, and availability."],
     lecturers: ["Directory", "Lecturers", "Search, filter, sort, add, edit, or remove lecturer records."],
@@ -285,7 +321,9 @@ function Header({ active, setOpen, activeTermLabel }) {
     terms: ["Academic Calendar", "Terms / Semesters", "Define academic terms and choose which one is active for plotting."],
   };
   const [eyebrow, title, desc] = titles[active];
-  return <div className="mb-6 flex gap-3"><button onClick={() => setOpen(true)} className="mt-1 rounded-xl border border-slate-200 bg-white p-2 lg:hidden"><Icons.menu /></button><div><p className="text-xs font-black uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p><h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">{title}</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{desc}{active !== "lecturers" && <> <b className="text-slate-700">{activeTermLabel}.</b></>}</p></div></div>;
+  const showTermPicker = active !== "lecturers";
+  const termSelectValue = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : terms[0]?.code || "";
+  return <div className="mb-6 flex gap-3"><button onClick={() => setOpen(true)} className="mt-1 rounded-xl border border-slate-200 bg-white p-2 lg:hidden"><Icons.menu /></button><div><p className="text-xs font-black uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p><h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">{title}</h1><p className="mt-2 flex max-w-3xl flex-wrap items-center gap-2 text-sm leading-6 text-slate-500"><span>{desc}</span>{showTermPicker && (terms.length ? <select aria-label="Select term" value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-bold text-slate-700 outline-none focus:border-blue-500">{terms.map((term) => <option key={term.code} value={term.code}>{term.name}</option>)}</select> : <b className="text-slate-700">No active term selected.</b>)}</p></div></div>;
 }
 
 function Stat({ label, value, icon: Icon, tone = "blue", note }) {
@@ -343,13 +381,13 @@ function CourseForm({ initial, onSave, onClose }) {
   return <div className="space-y-4"><FormGrid><PlainInput label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value.toUpperCase() })} /><PlainInput label="Credits" type="number" value={form.credits} onChange={(value) => setForm({ ...form, credits: value })} /></FormGrid><PlainInput label="Course title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} /><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!form.code || !form.title} onClick={() => onSave({ ...form, credits: Number(form.credits) })}>Save course</Button></div></div>;
 }
 
-function Courses({ courses, setCourses, setLecturers }) {
+function Courses({ courses, setCourses, setLecturers, setTermPlottings }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("code");
   const [modal, setModal] = useState(null);
   const rows = useMemo(() => courses.filter((course) => includes(course.code, query) || includes(course.title, query) || includes(course.credits, query)).sort((a, b) => String(a[sort]).localeCompare(String(b[sort]))), [courses, query, sort]);
   const save = (item) => { setCourses((prev) => prev.some((course) => course.code === item.code) ? prev.map((course) => course.code === item.code ? item : course) : [item, ...prev]); setModal(null); };
-  const remove = (code) => { setCourses((prev) => prev.filter((course) => course.code !== code)); setLecturers((prev) => prev.map((lecturer) => ({ ...lecturer, plotted: lecturer.plotted.filter((item) => item !== code) }))); };
+  const remove = (code) => { setCourses((prev) => prev.filter((course) => course.code !== code)); setLecturers((prev) => prev.map((lecturer) => ({ ...lecturer, plotted: lecturer.plotted.filter((item) => item !== code) }))); setTermPlottings((prev) => prev.map((row) => ({ ...row, plotted: row.plotted.filter((item) => item !== code) }))); };
   return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New course</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by code, title, or credits..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["code", "title", "credits"]} /></Card><Card className="divide-y divide-slate-100">{rows.map((course) => <div key={course.code} className="flex items-center justify-between gap-4 p-4"><div className="flex items-center gap-4"><div className="rounded-xl bg-blue-50 p-3 text-blue-700"><Icons.book /></div><div><p className="font-black text-slate-950"><span className="text-blue-700">{course.code}</span> · {course.title}</p><p className="text-sm text-slate-500">{course.credits} credits</p></div></div><div className="flex gap-3"><button onClick={() => setModal(course)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(course.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No courses match your search.</p>}</Card>{modal && <Modal title={modal.code ? "Edit course" : "New course"} onClose={() => setModal(null)}><CourseForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
@@ -358,12 +396,12 @@ function TermForm({ initial, onSave, onClose }) {
   return <div className="space-y-4"><PlainInput label="Term name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} /><PlainInput label="Academic year" value={form.ay} onChange={(value) => setForm({ ...form, ay: value })} /></FormGrid><FormGrid><PlainInput label="Semester" value={form.semester} onChange={(value) => setForm({ ...form, semester: value })} /><label className="mt-7 flex items-center gap-2 text-sm font-bold text-slate-700"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Set as active term</label></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!form.name || !form.code} onClick={() => onSave(form)}>Save term</Button></div></div>;
 }
 
-function Terms({ terms, setTerms }) {
+function Terms({ terms, setTerms, onActiveTermChange }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("name");
   const [modal, setModal] = useState(null);
   const rows = terms.filter((term) => [term.name, term.code, term.ay, term.semester, term.active ? "active" : "inactive"].some((value) => includes(value, query))).sort((a, b) => String(a[sort]).localeCompare(String(b[sort])));
-  const save = (item) => { setTerms((prev) => { const next = prev.some((term) => term.code === item.code) ? prev.map((term) => term.code === item.code ? item : term) : [item, ...prev]; return item.active ? next.map((term) => ({ ...term, active: term.code === item.code })) : next; }); setModal(null); };
+  const save = (item) => { setTerms((prev) => { const next = prev.some((term) => term.code === item.code) ? prev.map((term) => term.code === item.code ? item : term) : [item, ...prev]; return item.active ? next.map((term) => ({ ...term, active: term.code === item.code })) : next; }); if (item.active) onActiveTermChange(item.code); setModal(null); };
   const remove = (code) => setTerms((prev) => prev.filter((term) => term.code !== code));
   return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-black text-slate-950">{term.name}</p><p className="text-sm text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
@@ -385,6 +423,8 @@ export default function App() {
   const [lecturers, setLecturers] = useState([]);
   const [courses, setCourses] = useState([]);
   const [terms, setTerms] = useState([]);
+  const [termPlottings, setTermPlottings] = useState([]);
+  const [selectedTermCode, setSelectedTermCode] = useState("");
   const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   const [isHydrated, setIsHydrated] = useState(false);
   const hydratedRef = useRef(false);
@@ -408,15 +448,17 @@ export default function App() {
       try {
         setHydrated(false);
         setDbStatus("Loading database...");
-        const [lecturerRows, courseRows, termRows] = await Promise.all([
+        const [lecturerRows, courseRows, termRows, plottingRows] = await Promise.all([
           fetchTable("lecturers", "name"),
           fetchTable("courses", "code"),
           fetchTable("academic_terms", "code"),
+          fetchTable("term_plottings", "id"),
         ]);
         if (cancelled) return;
         setLecturers(Array.isArray(lecturerRows) ? lecturerRows : []);
         setCourses(Array.isArray(courseRows) ? courseRows : []);
         setTerms(Array.isArray(termRows) ? termRows : []);
+        setTermPlottings(Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : []);
         setHydrated(true);
         setDbStatus("Supabase connected");
       } catch (error) {
@@ -427,6 +469,8 @@ export default function App() {
           setLecturers([]);
           setCourses([]);
           setTerms([]);
+          setTermPlottings([]);
+          setSelectedTermCode("");
           setDbStatus("Session expired. Please sign in again.");
           return;
         }
@@ -436,6 +480,13 @@ export default function App() {
     loadDatabase();
     return () => { cancelled = true; };
   }, [setHydrated, userEmail]);
+
+  const activeTermCode = terms.find((term) => term.active)?.code || "";
+  const effectiveSelectedTermCode = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : activeTermCode || terms[0]?.code || "";
+  const validTermPlottings = useMemo(() => {
+    const lecturerIds = new Set(lecturers.map((lecturer) => lecturer.id));
+    return termPlottings.filter((row) => lecturerIds.has(row.lecturer_id));
+  }, [lecturers, termPlottings]);
 
   useEffect(() => {
     if (!USE_SUPABASE || !userEmail || !hydratedRef.current || syncingRef.current) return;
@@ -447,6 +498,7 @@ export default function App() {
           syncTable("lecturers", lecturers, "id"),
           syncTable("courses", courses, "code"),
           syncTable("academic_terms", terms, "code"),
+          syncTable("term_plottings", validTermPlottings, "id"),
         ]);
         setDbStatus("Supabase connected");
       } catch (error) {
@@ -456,7 +508,7 @@ export default function App() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [lecturers, courses, terms, userEmail]);
+  }, [lecturers, courses, terms, validTermPlottings, userEmail]);
 
   const handleLogin = (email) => {
     setHydrated(false);
@@ -470,15 +522,27 @@ export default function App() {
     setLecturers([]);
     setCourses([]);
     setTerms([]);
+    setTermPlottings([]);
+    setSelectedTermCode("");
     setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   };
 
   const Page = { dashboard: Dashboard, lecturers: Lecturers, plotting: Plotting, courses: Courses, terms: Terms }[active];
-  const props = { lecturers, setLecturers, courses, setCourses, terms, setTerms };
-  const activeTerm = terms.find((term) => term.active);
-  const activeTermLabel = activeTerm?.name || "No active term selected";
+  const termScopedLecturers = useMemo(() => getTermScopedLecturers(lecturers, validTermPlottings, effectiveSelectedTermCode), [lecturers, validTermPlottings, effectiveSelectedTermCode]);
+  const setTermScopedLecturers = useCallback((updater) => {
+    if (!effectiveSelectedTermCode) return;
+    setTermPlottings((prev) => {
+      const scoped = getTermScopedLecturers(lecturers, prev, effectiveSelectedTermCode);
+      const nextScoped = typeof updater === "function" ? updater(scoped) : updater;
+      const nextRows = nextScoped.map((lecturer) => buildTermPlottingRow(effectiveSelectedTermCode, lecturer));
+      return prev.filter((row) => row.term_code !== effectiveSelectedTermCode).concat(nextRows);
+    });
+  }, [lecturers, effectiveSelectedTermCode]);
+  const pageLecturers = active === "dashboard" || active === "plotting" ? termScopedLecturers : lecturers;
+  const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
+  const props = { lecturers: pageLecturers, setLecturers: pageSetLecturers, courses, setCourses, terms, setTerms, setTermPlottings, onActiveTermChange: setSelectedTermCode };
 
   if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
 
-  return <div className="min-h-screen bg-slate-50 text-slate-900"><div className="flex min-h-screen items-stretch"><Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen} collapsed={collapsed} setCollapsed={setCollapsed} onLogout={handleLogout} /><main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} setOpen={setOpen} activeTermLabel={activeTermLabel} /><motion.div key={active} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main></div></div>;
+  return <div className="min-h-screen bg-slate-50 text-slate-900"><div className="flex min-h-screen items-stretch"><Sidebar active={active} setActive={setActive} open={open} setOpen={setOpen} collapsed={collapsed} setCollapsed={setCollapsed} onLogout={handleLogout} /><main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} setOpen={setOpen} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main></div></div>;
 }
