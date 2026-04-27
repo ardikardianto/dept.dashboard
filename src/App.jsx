@@ -290,6 +290,156 @@ function exportLecturersToXLSX(lecturers, courses) {
   downloadBlob(`UT_English_Lecturers_${filenameDate}.xlsx`, createXLSX(rows), xlsxContentType);
 }
 
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      i += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell);
+      if (row.some((value) => value !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((value) => value !== "")) rows.push(row);
+  return rows;
+}
+
+function rowsToObjects(rows) {
+  const [headers = [], ...body] = rows;
+  return body.map((row) => headers.reduce((acc, header, index) => ({ ...acc, [String(header || "").trim()]: row[index] ?? "" }), {}));
+}
+
+function getUint16(view, offset) {
+  return view.getUint16(offset, true);
+}
+
+function getUint32(view, offset) {
+  return view.getUint32(offset, true);
+}
+
+async function inflateZipEntry(bytes) {
+  for (const format of ["deflate-raw", "deflate"]) {
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch {
+      // Try the next supported browser decompression format.
+    }
+  }
+  throw new Error("Could not decompress this XLSX file.");
+}
+
+async function readZipEntries(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const decoder = new TextDecoder();
+  let eocdOffset = -1;
+  for (let i = bytes.length - 22; i >= 0; i -= 1) {
+    if (getUint32(view, i) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) throw new Error("Invalid XLSX file.");
+  const entryCount = getUint16(view, eocdOffset + 10);
+  let centralOffset = getUint32(view, eocdOffset + 16);
+  const entries = {};
+
+  for (let i = 0; i < entryCount; i += 1) {
+    if (getUint32(view, centralOffset) !== 0x02014b50) throw new Error("Invalid XLSX directory.");
+    const method = getUint16(view, centralOffset + 10);
+    const compressedSize = getUint32(view, centralOffset + 20);
+    const nameLength = getUint16(view, centralOffset + 28);
+    const extraLength = getUint16(view, centralOffset + 30);
+    const commentLength = getUint16(view, centralOffset + 32);
+    const localOffset = getUint32(view, centralOffset + 42);
+    const name = decoder.decode(bytes.slice(centralOffset + 46, centralOffset + 46 + nameLength));
+    const localNameLength = getUint16(view, localOffset + 26);
+    const localExtraLength = getUint16(view, localOffset + 28);
+    const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = bytes.slice(dataOffset, dataOffset + compressedSize);
+    const data = method === 0 ? compressed : method === 8 ? await inflateZipEntry(compressed) : null;
+    if (!data) throw new Error("Unsupported XLSX compression method.");
+    entries[name] = decoder.decode(data);
+    centralOffset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function parseSharedStrings(xml) {
+  if (!xml) return [];
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  return Array.from(doc.querySelectorAll("si")).map((item) => Array.from(item.querySelectorAll("t")).map((node) => node.textContent || "").join(""));
+}
+
+function parseWorksheet(xml, sharedStrings) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  return Array.from(doc.querySelectorAll("sheetData row")).map((row) => {
+    const cells = [];
+    Array.from(row.querySelectorAll("c")).forEach((cell) => {
+      const ref = cell.getAttribute("r") || "";
+      const column = ref.replace(/\d/g, "").split("").reduce((sum, char) => (sum * 26) + char.charCodeAt(0) - 64, 0) - 1;
+      const type = cell.getAttribute("t");
+      const valueNode = cell.querySelector("v");
+      const inlineNode = cell.querySelector("is t");
+      const rawValue = valueNode?.textContent || inlineNode?.textContent || "";
+      cells[column] = type === "s" ? sharedStrings[Number(rawValue)] || "" : rawValue;
+    });
+    return cells.map((value) => value ?? "");
+  });
+}
+
+async function parseXLSX(file) {
+  const entries = await readZipEntries(await file.arrayBuffer());
+  const worksheetName = entries["xl/worksheets/sheet1.xml"] ? "xl/worksheets/sheet1.xml" : Object.keys(entries).find((name) => name.startsWith("xl/worksheets/") && name.endsWith(".xml"));
+  if (!worksheetName) throw new Error("No worksheet found in this XLSX file.");
+  return rowsToObjects(parseWorksheet(entries[worksheetName], parseSharedStrings(entries["xl/sharedStrings.xml"])));
+}
+
+function splitList(value) {
+  return String(value || "").split(/[;,]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function getImportedValue(row, names) {
+  const entries = Object.entries(row);
+  const match = entries.find(([key]) => names.some((name) => key.trim().toLowerCase() === name.toLowerCase()));
+  return match?.[1] ?? "";
+}
+
+function mapImportedLecturers(rows, courses) {
+  return rows.map((row) => {
+    const plotted = splitList(getImportedValue(row, ["Plotted_Course_Codes", "Plotted Course Codes", "Plotted Courses", "Plotted", "Courses"]));
+    const knownPlotted = plotted.filter((code) => !courses.length || courses.some((course) => course.code === code));
+    return {
+      id: String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim(),
+      degree: String(getImportedValue(row, ["Degree"])).trim(),
+      name: String(getImportedValue(row, ["Name", "Full Name"])).trim(),
+      email: String(getImportedValue(row, ["Email"])).trim(),
+      phone: String(getImportedValue(row, ["Phone"])).trim(),
+      expertise: splitList(getImportedValue(row, ["Expertise"])),
+      plotted: knownPlotted,
+      available: Number(getImportedValue(row, ["Available_Slots", "Available Slots", "Available"])) || 0,
+    };
+  }).filter((row) => row.id && row.name && row.email);
+}
+
 function getAccessToken() {
   return localStorage.getItem("ut_supabase_access_token") || "";
 }
@@ -470,6 +620,7 @@ function LecturerInfoCard({ lecturer, courses }) {
 }
 
 function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses }) {
+  const importInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [degree, setDegree] = useState("All");
   const [expertise, setExpertise] = useState("All");
@@ -477,6 +628,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   const [sort, setSort] = useState("name");
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [importMessage, setImportMessage] = useState("");
   const directoryById = useMemo(() => new Map(directoryLecturers.map((lecturer) => [lecturer.id, lecturer])), [directoryLecturers]);
   const rows = useMemo(() => lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.phone, lecturer.degree, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => degree === "All" || lecturer.degree === degree).filter((lecturer) => expertise === "All" || lecturer.expertise.includes(expertise)).filter((lecturer) => available === "All" || String(lecturer.available) === available).sort((a, b) => String(a[sort] ?? "").localeCompare(String(b[sort] ?? ""))), [lecturers, courses, query, degree, expertise, available, sort]);
   const save = (item) => {
@@ -485,8 +637,41 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setTermLecturers((prev) => prev.some((lecturer) => lecturer.id === item.id) ? prev.map((lecturer) => lecturer.id === item.id ? { ...lecturer, ...item, available: availableSlots, plotted: lecturer.plotted } : lecturer) : [{ ...item, available: availableSlots, plotted: [] }, ...prev]);
     setModal(null);
   };
+  const importRows = (items) => {
+    setLecturers((prev) => {
+      const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
+      items.forEach((item) => {
+        const existing = byId.get(item.id);
+        byId.set(item.id, { ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available });
+      });
+      return Array.from(byId.values());
+    });
+    setTermLecturers((prev) => {
+      const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
+      items.forEach((item) => {
+        byId.set(item.id, { ...(byId.get(item.id) || item), ...item });
+      });
+      return Array.from(byId.values());
+    });
+  };
+  const handleImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportMessage("");
+    try {
+      const rawRows = file.name.toLowerCase().endsWith(".csv") ? rowsToObjects(parseCSV(await file.text())) : await parseXLSX(file);
+      const imported = mapImportedLecturers(rawRows, courses);
+      if (!imported.length) throw new Error("No valid lecturer rows found. Use the exported XLSX template columns.");
+      importRows(imported);
+      setImportMessage(`Imported ${imported.length} lecturer ${imported.length === 1 ? "row" : "rows"}.`);
+    } catch (error) {
+      setImportMessage(error.message || "Import failed.");
+    } finally {
+      event.target.value = "";
+    }
+  };
   const remove = (id) => setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
-  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary"><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div><Card className="p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, or course name..." /><div className="mt-4 grid gap-3 md:grid-cols-5"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "id", "degree", "email", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setSort("name"); }}>Reset</Button></div></Card><Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr>{["ID", "Degree", "Full Name", "#Plotted", "Available", "Email", "Phone", "Expertise", "Plotted Courses", "Actions"].map((header) => <th key={header} className="px-4 py-4 font-black">{header}</th>)}</tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-bold text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-black text-slate-900">{lecturer.name}</td><td className="px-4 py-4 font-bold">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4 text-slate-600">{lecturer.email}</td><td className="px-4 py-4 text-slate-600">{lecturer.phone}</td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs text-slate-600"><div className="flex max-w-md flex-wrap gap-1">{lecturer.plotted.map((code) => <Badge key={code} tone="slate">{courseTitleByCode(courses, code)}</Badge>)}</div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-semibold ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, or course name..." /><div className="mt-4 grid gap-3 md:grid-cols-5"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "id", "degree", "email", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setSort("name"); }}>Reset</Button></div></Card><Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr>{["ID", "Degree", "Full Name", "#Plotted", "Available", "Email", "Phone", "Expertise", "Plotted Courses", "Actions"].map((header) => <th key={header} className="px-4 py-4 font-black">{header}</th>)}</tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-bold text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-black text-slate-900">{lecturer.name}</td><td className="px-4 py-4 font-bold">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4 text-slate-600">{lecturer.email}</td><td className="px-4 py-4 text-slate-600">{lecturer.phone}</td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs text-slate-600"><div className="flex max-w-md flex-wrap gap-1">{lecturer.plotted.map((code) => <Badge key={code} tone="slate">{courseTitleByCode(courses, code)}</Badge>)}</div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function Plotting({ lecturers, setLecturers, courses }) {
