@@ -1,1 +1,133 @@
 @import "tailwindcss";
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (max-width: 640px) {
+  .mobile-bottom-nav {
+    bottom: 0;
+    padding-inline: 0.5rem;
+  }
+
+  .mobile-bottom-nav > div {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+    max-width: none;
+    overflow: visible;
+    border-radius: 1.25rem 1.25rem 0 0;
+    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
+  }
+
+  .mobile-bottom-nav button {
+    margin-left: 0 !important;
+    min-width: 0 !important;
+    width: 100%;
+    border-radius: 0.9rem !important;
+    padding: 0.55rem 0.35rem !important;
+    font-size: 0.68rem !important;
+    line-height: 1.1;
+  }
+
+  .mobile-bottom-nav svg {
+    height: 1.1rem;
+    width: 1.1rem;
+  }
+
+  .mobile-modal {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .mobile-modal__panel {
+    max-height: 92dvh;
+    max-width: none;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding: 1rem;
+  }
+
+  .mobile-modal__panel h2 {
+    font-size: 1.1rem;
+    line-height: 1.25;
+  }
+
+  .mobile-card-table .overflow-x-auto {
+    overflow-x: visible;
+  }
+
+  .mobile-card-table table,
+  .mobile-card-table thead,
+  .mobile-card-table tbody,
+  .mobile-card-table tr,
+  .mobile-card-table td {
+    display: block;
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .mobile-card-table thead {
+    display: none;
+  }
+
+  .mobile-card-table tbody {
+    padding: 0.75rem;
+  }
+
+  .mobile-card-table tr {
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    border: 1px solid #d7e6f7;
+    border-radius: 1rem;
+    background: #fffefb;
+    box-shadow: 0 12px 30px rgba(0, 91, 170, 0.06);
+  }
+
+  .mobile-card-table tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .mobile-card-table td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+    border-top: 1px solid #edf3f1;
+    padding: 0.8rem 0.95rem !important;
+    text-align: right;
+  }
+
+  .mobile-card-table td:first-child {
+    border-top: 0;
+    background: #f7fbf6;
+  }
+
+  .mobile-card-table td::before {
+    flex: 0 0 7.25rem;
+    content: "";
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6d7d86;
+  }
+
+  .mobile-card-table td:nth-child(1)::before { content: "ID"; }
+  .mobile-card-table td:nth-child(2)::before { content: "Degree"; }
+  .mobile-card-table td:nth-child(3)::before { content: "Full name"; }
+  .mobile-card-table td:nth-child(4)::before { content: "#Plotted"; }
+  .mobile-card-table td:nth-child(5)::before { content: "Available"; }
+  .mobile-card-table td:nth-child(6)::before { content: "Expertise"; }
+  .mobile-card-table td:nth-child(7)::before { content: "Courses"; }
+  .mobile-card-table td:nth-child(8)::before { content: "Actions"; }
+
+  .mobile-card-table td > div {
+    justify-content: flex-end;
+  }
+
+  .mobile-card-table button {
+    min-height: 2.25rem;
+    min-width: 2.25rem;
+  }
+}
