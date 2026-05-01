@@ -118,27 +118,48 @@ html {
 
   .mobile-bottom-nav > div {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.25rem;
     max-width: none;
     overflow: visible;
-    border-radius: 1.25rem 1.25rem 0 0;
-    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
+    border-radius: 1rem 1rem 0 0;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(12, 23, 36, 0.96) !important;
+    padding: 0.35rem 0.45rem calc(0.35rem + env(safe-area-inset-bottom));
+    box-shadow: 0 -14px 40px rgba(12, 23, 36, 0.25);
   }
 
   .mobile-bottom-nav button {
     margin-left: 0 !important;
     min-width: 0 !important;
     width: 100%;
-    border-radius: 0.9rem !important;
-    padding: 0.55rem 0.35rem !important;
-    font-size: 0.68rem !important;
-    line-height: 1.1;
+    min-height: 2.55rem;
+    border-radius: 0.8rem !important;
+    padding: 0.55rem 0.25rem !important;
+    border-color: transparent !important;
+    font-size: 0 !important;
+    line-height: 1;
+    color: #d7e6f7 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .mobile-bottom-nav button[title="Logout"] {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .mobile-bottom-nav button.bg-\[\#ffd23f\] {
+    background: #ffd23f !important;
+    color: #102f52 !important;
+  }
+
+  .mobile-bottom-nav button span {
+    display: none;
   }
 
   .mobile-bottom-nav svg {
-    height: 1.1rem;
-    width: 1.1rem;
+    height: 1.25rem;
+    width: 1.25rem;
   }
 
   .mobile-modal {
