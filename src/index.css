@@ -166,38 +166,6 @@ html {
     opacity: 0;
   }
 
-  .mobile-filter-fab__panel--search {
-    width: min(18rem, calc(100vw - 5rem));
-  }
-
-  .mobile-floating-search {
-    display: flex;
-    height: 3rem;
-    width: 100%;
-    align-items: center;
-    gap: 0.65rem;
-    border-radius: 999px;
-    border: 1px solid #d7e6f7;
-    background: rgba(255, 255, 255, 0.98);
-    padding: 0 0.95rem;
-    color: #315577;
-    box-shadow: 0 18px 45px rgba(0, 91, 170, 0.16);
-    backdrop-filter: blur(12px);
-  }
-
-  .mobile-floating-search input {
-    min-width: 0;
-    flex: 1;
-    border: 0;
-    background: transparent;
-    color: #102f52;
-    outline: none;
-  }
-
-  .mobile-floating-search input::placeholder {
-    color: #8aa0b6;
-  }
-
   .mobile-filter-fab__panel > p {
     margin-bottom: 0 !important;
     border-radius: 999px;
