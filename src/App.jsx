@@ -37,6 +37,7 @@ const nav = [
   { id: "plotting", label: "Plotting", icon: Icons.file }, { id: "courses", label: "Courses", icon: Icons.book },
   { id: "terms", label: "Terms", icon: Icons.calendar },
 ];
+const dashboardPalette = ["#005baa", "#ffd23f", "#3d8bd6", "#f4b000", "#8fbbe8"];
 
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 const includes = (value, query) => String(value || "").toLowerCase().includes(String(query || "").toLowerCase());
@@ -45,6 +46,8 @@ const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) =
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
 const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
 const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 99;
+const LECTURER_CLASS_LIMIT = 4;
+const COURSE_CLASS_PLANS_STORAGE_KEY = "ut_course_class_plans";
 
 function toClassCount(value) {
   const count = Number(value);
@@ -63,8 +66,179 @@ function PlottedCourseBadges({ plotted, courses }) {
   return getPlottedCourseCounts(plotted).map(({ code, count }) => <Badge key={code} tone="slate">{courseTitleByCode(courses, code)}{count > 1 ? ` x${count}` : ""}</Badge>);
 }
 
-function buildPlottedFromCounts(counts) {
-  return Object.entries(counts).flatMap(([code, count]) => Array.from({ length: toClassCount(count) }, () => code));
+function getStoredCourseClassPlans() {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COURSE_CLASS_PLANS_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getCourseClassPlan(courseClassPlans, termCode) {
+  const plan = courseClassPlans?.[termCode] || {};
+  const counts = plan.counts && typeof plan.counts === "object" ? plan.counts : plan;
+  return Object.fromEntries(Object.entries(counts).filter(([code]) => code !== "assignments").map(([code, count]) => [code, toClassCount(count)]));
+}
+
+function getCoursePlanParts(courseClassPlans, termCode) {
+  const current = courseClassPlans?.[termCode] || {};
+  return {
+    counts: current.counts && typeof current.counts === "object" ? current.counts : Object.fromEntries(Object.entries(current).filter(([key]) => key !== "assignments")),
+    assignments: current.assignments && typeof current.assignments === "object" ? current.assignments : {},
+  };
+}
+
+function countAssignmentsByCourse(lecturers, courses) {
+  const courseCodes = new Set(courses.map((course) => course.code));
+  return lecturers.reduce((acc, lecturer) => {
+    lecturer.plotted.filter((code) => courseCodes.has(code)).forEach((code) => {
+      acc[code] = (acc[code] || 0) + 1;
+    });
+    return acc;
+  }, {});
+}
+
+function getCourseClassCounts(lecturers, courses, plannedCounts = {}, assignmentMap = null) {
+  const assignedCounts = countAssignmentsByCourse(lecturers, courses);
+  return Object.fromEntries(courses.map((course) => [course.code, Math.max(toClassCount(plannedCounts[course.code]), assignedCounts[course.code] || 0, assignmentMap?.[course.code]?.length || 0)]));
+}
+
+function getCourseAssignmentMap(lecturers, courses) {
+  const assignments = Object.fromEntries(courses.map((course) => [course.code, []]));
+  lecturers.forEach((lecturer) => {
+    lecturer.plotted.forEach((code) => {
+      if (assignments[code]) assignments[code].push(lecturer.id);
+    });
+  });
+  return assignments;
+}
+
+function countLecturerAssignments(assignmentMap = {}, lecturerId) {
+  if (!lecturerId) return 0;
+  return Object.values(assignmentMap).reduce((sum, ids) => sum + (Array.isArray(ids) ? ids.filter((id) => id === lecturerId).length : 0), 0);
+}
+
+function limitAssignmentMapByLecturer(assignmentMap = {}) {
+  const lecturerCounts = {};
+  return Object.fromEntries(Object.entries(assignmentMap).map(([courseCode, ids]) => [courseCode, (Array.isArray(ids) ? ids : []).map((lecturerId) => {
+    if (!lecturerId) return "";
+    lecturerCounts[lecturerId] = lecturerCounts[lecturerId] || 0;
+    if (lecturerCounts[lecturerId] >= LECTURER_CLASS_LIMIT) return "";
+    lecturerCounts[lecturerId] += 1;
+    return lecturerId;
+  })]));
+}
+
+function mergeAssignmentMapWithLecturerLimit(baseAssignmentMap = {}, incomingAssignmentMap = {}) {
+  const incomingCourseCodes = new Set(Object.keys(incomingAssignmentMap));
+  const lecturerCounts = {};
+  Object.entries(baseAssignmentMap).forEach(([courseCode, ids]) => {
+    if (incomingCourseCodes.has(courseCode)) return;
+    (Array.isArray(ids) ? ids : []).forEach((lecturerId) => {
+      if (lecturerId) lecturerCounts[lecturerId] = (lecturerCounts[lecturerId] || 0) + 1;
+    });
+  });
+  const limitedIncoming = Object.fromEntries(Object.entries(incomingAssignmentMap).map(([courseCode, ids]) => [courseCode, (Array.isArray(ids) ? ids : []).map((lecturerId) => {
+    if (!lecturerId) return "";
+    lecturerCounts[lecturerId] = lecturerCounts[lecturerId] || 0;
+    if (lecturerCounts[lecturerId] >= LECTURER_CLASS_LIMIT) return "";
+    lecturerCounts[lecturerId] += 1;
+    return lecturerId;
+  })]));
+  return { ...baseAssignmentMap, ...limitedIncoming };
+}
+
+function getCourseClassAssignmentPlan(courseClassPlans, termCode, lecturers, courses) {
+  const plan = courseClassPlans?.[termCode] || {};
+  const storedAssignments = plan.assignments && typeof plan.assignments === "object" ? plan.assignments : {};
+  const fallbackAssignments = getCourseAssignmentMap(lecturers, courses);
+  const lecturerIds = new Set(lecturers.map((lecturer) => lecturer.id));
+  return Object.fromEntries(courses.map((course) => {
+    const stored = Array.isArray(storedAssignments[course.code]) ? storedAssignments[course.code].map((id) => String(id || "")).filter((id) => !id || lecturerIds.has(id)) : null;
+    return [course.code, stored?.some(Boolean) ? stored : fallbackAssignments[course.code] || stored || []];
+  }));
+}
+
+function applyCourseAssignmentsToLecturers(lecturers, courses, assignmentMap) {
+  const courseCodes = new Set(courses.map((course) => course.code));
+  const plottedByLecturer = new Map(lecturers.map((lecturer) => [lecturer.id, lecturer.plotted.filter((code) => !courseCodes.has(code))]));
+  courses.forEach((course) => {
+    (assignmentMap[course.code] || []).forEach((lecturerId) => {
+      if (!lecturerId || !plottedByLecturer.has(lecturerId)) return;
+      plottedByLecturer.get(lecturerId).push(course.code);
+    });
+  });
+  return lecturers.map((lecturer) => ({ ...lecturer, plotted: plottedByLecturer.get(lecturer.id) || [] }));
+}
+
+function expertiseMatchesCourse(lecturer, course) {
+  const courseText = `${course.code} ${course.title}`.toLowerCase();
+  return lecturer.expertise.some((item) => {
+    const expertise = String(item || "").trim().toLowerCase();
+    return expertise && (courseText.includes(expertise) || expertise.includes(course.title.toLowerCase()));
+  });
+}
+
+function buildPlottingExportRows(lecturers, courses, plannedCounts = {}, assignmentMap = null) {
+  const assignments = assignmentMap || getCourseAssignmentMap(lecturers, courses);
+  const counts = getCourseClassCounts(lecturers, courses, plannedCounts, assignments);
+  const lecturersById = new Map(lecturers.map((lecturer) => [lecturer.id, lecturer]));
+  return courses.flatMap((course) => Array.from({ length: counts[course.code] || 0 }, (_, index) => {
+    const lecturer = lecturersById.get(assignments[course.code]?.[index]);
+    return {
+      "": "",
+      Idtutor: lecturer?.id || "",
+      Nama: lecturer?.name || "",
+      Kelas: `${course.code}.${index + 1}`,
+      "Nama MK": course.title,
+    };
+  }));
+}
+
+function getCourseCodeFromClass(value) {
+  return String(value || "").trim().split(".")[0];
+}
+
+function mapImportedPlottingRows(rows, lecturers, courses) {
+  const lecturerIds = new Set(lecturers.map((lecturer) => lecturer.id));
+  const lecturersByName = new Map(lecturers.map((lecturer) => [lecturer.name.toLowerCase(), lecturer]));
+  const coursesByCode = new Map(courses.map((course) => [course.code, course]));
+  const coursesByTitle = new Map(courses.map((course) => [course.title.toLowerCase(), course]));
+  const assignments = {};
+  const counts = {};
+  const ignored = { courses: new Set(), lecturers: new Set() };
+
+  rows.filter((row) => !isImportRowBlank(row)).forEach((row) => {
+    const className = String(getImportedValue(row, ["Kelas", "Class"])).trim();
+    const courseName = String(getImportedValue(row, ["Nama MK", "Course Name", "Course"])).trim();
+    const importedLecturerId = String(getImportedValue(row, ["Idtutor", "Lecturer_ID", "Lecturer ID", "ID"])).trim();
+    const lecturerName = String(getImportedValue(row, ["Nama", "Name", "Full Name"])).trim();
+    const lecturerId = lecturerIds.has(importedLecturerId) ? importedLecturerId : lecturersByName.get(lecturerName.toLowerCase())?.id || importedLecturerId;
+    const courseCode = getCourseCodeFromClass(className);
+    const course = coursesByCode.get(courseCode) || coursesByTitle.get(courseName.toLowerCase());
+    if (!course) {
+      ignored.courses.add(courseCode || courseName || "blank course");
+      return;
+    }
+    if (lecturerId && !lecturerIds.has(lecturerId)) {
+      ignored.lecturers.add(lecturerId);
+      return;
+    }
+    const classNumber = Number(className.split(".")[1]);
+    const index = Number.isFinite(classNumber) && classNumber > 0 ? Math.floor(classNumber) - 1 : (assignments[course.code] || []).length;
+    assignments[course.code] = assignments[course.code] || [];
+    assignments[course.code][index] = lecturerId;
+    counts[course.code] = Math.max(counts[course.code] || 0, index + 1);
+  });
+
+  return {
+    assignments: Object.fromEntries(Object.entries(assignments).map(([code, ids]) => [code, Array.from({ length: counts[code] || ids.length }, (_, index) => ids[index] || "")])),
+    counts,
+    ignoredCourses: Array.from(ignored.courses),
+    ignoredLecturers: Array.from(ignored.lecturers),
+  };
 }
 
 function normalizeLecturer(row) {
@@ -169,6 +343,18 @@ function runTests() {
   console.assert(plottedCourseCountLabel(1) === "1 plotted course", "Singular label should work");
   console.assert(plottedCourseCountLabel(2) === "2 plotted courses", "Plural label should work");
   console.assert(getPlottedCountData(testLecturers).some((item) => item.name === "1 plotted course"), "Dashboard data should include 1 plotted course");
+  console.assert(getCourseClassCounts(testLecturers, testCourses, { COURSE101: 3 }).COURSE101 === 3, "Planned class count should override assigned count when larger");
+  console.assert(getCourseAssignmentMap(testLecturers, testCourses).COURSE101.length === 2, "Course assignment map should include each assigned class");
+  console.assert(expertiseMatchesCourse(testLecturers[0], testCourses[0]), "Expertise should match course title");
+  const plottingRows = buildPlottingExportRows(testLecturers, testCourses, { COURSE101: 3 });
+  console.assert(plottingRows.length === 4, "Plotting export should include planned classes and existing assignments");
+  console.assert(plottingRows[0].Idtutor === "LECT001" && plottingRows[0].Kelas === "COURSE101.1" && plottingRows[0]["Nama MK"] === "Basic Reading", "Plotting export should match the Excel plotting schema");
+  console.assert(plottingRows[2].Idtutor === "", "Unassigned planned classes should export as blank lecturer cells");
+  const importedPlotting = mapImportedPlottingRows([{ Idtutor: "LECT002", Nama: "Second Lecturer", Kelas: "COURSE102.1", "Nama MK": "Academic Writing" }], testLecturers, testCourses);
+  console.assert(importedPlotting.counts.COURSE102 === 1, "Plotting import should set class count from Kelas");
+  console.assert(importedPlotting.assignments.COURSE102[0] === "LECT002", "Plotting import should map lecturer ID to class");
+  const limitedAssignments = limitAssignmentMapByLecturer({ COURSE101: ["LECT001", "LECT001", "LECT001"], COURSE102: ["LECT001", "LECT001"] });
+  console.assert(countLecturerAssignments(limitedAssignments, "LECT001") === LECTURER_CLASS_LIMIT, "Lecturer assignments should be capped at four classes");
   const scopedLecturers = getTermScopedLecturers(testLecturers, [buildTermPlottingRow("TERM002", { ...testLecturers[0], plotted: ["COURSE102"], available: 3 })], "TERM002");
   console.assert(scopedLecturers[0].plotted.includes("COURSE102"), "Term plotting should override lecturer plotting");
   console.assert(scopedLecturers[1].plotted.length === 0, "Missing term plotting should stay empty for a new term");
@@ -291,7 +477,7 @@ function createZip(files) {
   return new Uint8Array(output);
 }
 
-function createXLSX(rows) {
+function createXLSX(rows, sheetName = "Lecturers") {
   const headers = Object.keys(rows[0]);
   const sheetRows = [headers].concat(rows.map((row) => headers.map((header) => row[header])));
   const sheetData = sheetRows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, columnIndex) => {
@@ -304,7 +490,7 @@ function createXLSX(rows) {
   return createZip([
     { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
     { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
-    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Lecturers" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
     { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
     { name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>` },
     { name: "xl/worksheets/sheet1.xml", content: worksheet },
@@ -323,6 +509,20 @@ function exportLecturersToXLSX(lecturers, courses) {
     return;
   }
   downloadBlob(`UT_English_Lecturers_${filenameDate}.xlsx`, createXLSX(rows), xlsxContentType);
+}
+
+function exportPlottingToXLSX(lecturers, courses, plannedCounts, assignmentMap) {
+  const rows = buildPlottingExportRows(lecturers, courses, plannedCounts, assignmentMap);
+  if (!rows.length) return;
+  const filenameDate = new Date().toISOString().slice(0, 10);
+  if (typeof window !== "undefined" && window.XLSX?.utils && window.XLSX?.writeFile) {
+    const worksheet = window.XLSX.utils.json_to_sheet(rows);
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    window.XLSX.writeFile(workbook, `Plotting_${filenameDate}.xlsx`);
+    return;
+  }
+  downloadBlob(`Plotting_${filenameDate}.xlsx`, createXLSX(rows, "Sheet1"), xlsxContentType);
 }
 
 function parseCSV(text) {
@@ -570,44 +770,44 @@ function getStoredUserEmail() {
 
 function Button({ children, variant = "primary", className = "", ...props }) {
   const styles = {
-    primary: "bg-blue-700 text-white hover:bg-blue-800 shadow-sm",
-    secondary: "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50",
-    ghost: "bg-transparent text-slate-600 hover:bg-slate-100",
-    danger: "bg-white text-red-600 border border-red-100 hover:bg-red-50",
+    primary: "bg-[#005baa] text-white hover:bg-[#004984] shadow-sm",
+    secondary: "bg-white text-[#102f52] border border-[#d7e6f7] hover:bg-[#f4f9ff]",
+    ghost: "bg-transparent text-[#315577] hover:bg-[#eef5ff]",
+    danger: "bg-[#fffafa] text-[#8a3a3a] border border-[#f3caca] hover:bg-[#fdeaea]",
   };
   return <button className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]} ${className}`} {...props}>{children}</button>;
 }
 
 function Badge({ children, tone = "blue" }) {
   const tones = {
-    red: "bg-red-50 text-red-700 border-red-100",
-    orange: "bg-orange-50 text-orange-700 border-orange-100",
-    amber: "bg-amber-50 text-amber-700 border-amber-100",
-    blue: "bg-blue-50 text-blue-700 border-blue-100",
-    green: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    slate: "bg-slate-100 text-slate-700 border-slate-200",
+    red: "bg-[#fde2e2] text-[#8a3a3a] border-[#f3caca]",
+    orange: "bg-[#ffe5cf] text-[#8a4f26] border-[#f5d3b9]",
+    amber: "bg-[#fff0c2] text-[#71540f] border-[#f3dda2]",
+    blue: "bg-[#dcecff] text-[#315577] border-[#c7dbf2]",
+    green: "bg-[#dff3e6] text-[#315f45] border-[#c6e3d1]",
+    slate: "bg-[#eef3f2] text-[#4d5d66] border-[#dce9e6]",
   };
-  return <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-bold ${tones[tone] || tones.blue}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-normal ${tones[tone] || tones.blue}`}>{children}</span>;
 }
 
 function Card({ children, className = "" }) {
-  return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+  return <div className={`rounded-2xl border border-[#d7e6f7] bg-white shadow-sm shadow-[#005baa]/5 ${className}`}>{children}</div>;
 }
 
 function TextInput({ icon: Icon, value = "", onChange, placeholder, type = "text" }) {
-  return <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">{Icon && <Icon className="h-4 w-4 text-slate-400" />}<input value={value} onChange={(event) => onChange?.(event.target.value)} type={type} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder={placeholder} /></div>;
+  return <div className="flex h-12 items-center gap-3 rounded-xl border border-[#d7e6f7] bg-white px-3">{Icon && <Icon className="h-4 w-4 text-[#6f90af]" />}<input value={value} onChange={(event) => onChange?.(event.target.value)} type={type} className="w-full bg-transparent text-sm text-[#102f52] outline-none placeholder:text-[#8aa0b6]" placeholder={placeholder} /></div>;
 }
 
 function SelectBox({ label, value, onChange, options = [] }) {
-  return <label className="space-y-1.5"><span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange?.(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm text-slate-700 outline-none"><option value="All">All</option>{options.filter((option) => option !== "All").map((option) => <option key={option} value={option}>{option}</option>)}</select><Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" /></div></label>;
+  return <label className="space-y-1.5"><span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange?.(event.target.value)} className="w-full appearance-none rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 pr-9 text-sm font-normal text-[#102f52] outline-none"><option value="All">All</option>{options.filter((option) => option !== "All").map((option) => <option key={option} value={option}>{option}</option>)}</select><Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6f90af]" /></div></label>;
 }
 
 function Modal({ title, children, onClose }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={onClose}><motion.div onClick={(event) => event.stopPropagation()} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">{title}</h2><button onClick={onClose} className="rounded-xl p-2 hover:bg-slate-100"><Icons.x /></button></div>{children}</motion.div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#24333f]/35 p-4" onClick={onClose}><motion.div onClick={(event) => event.stopPropagation()} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#dce9e6] bg-[#fffffb] p-5 shadow-2xl shadow-[#9fb8b1]/30"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-black text-[#26353f]">{title}</h2><button onClick={onClose} className="rounded-xl p-2 hover:bg-[#eef6f2]"><Icons.x /></button></div>{children}</motion.div></div>;
 }
 
 function PlainInput({ label, value = "", onChange, placeholder, type = "text" }) {
-  return <label className="space-y-1.5"><span className="text-xs font-bold text-slate-600">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500" /></label>;
+  return <label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} className="w-full rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]" /></label>;
 }
 
 function FormGrid({ children }) {
@@ -615,25 +815,25 @@ function FormGrid({ children }) {
 }
 
 function FloatingBottomNav({ active, setActive, onLogout }) {
-  return <nav className="fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 sm:px-6"><div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto rounded-[1.75rem] border border-slate-200 bg-white/95 p-2 shadow-[0_18px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl"><div className="hidden shrink-0 items-center gap-3 border-r border-slate-200 px-3 pr-4 md:flex"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-700 text-white"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black text-slate-950">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{department.subtitle}</p></div></div>{nav.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} title={item.label} onClick={() => setActive(item.id)} className={`flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm ${selected ? "bg-blue-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}><Icon className="h-5 w-5" /><span>{item.label}</span></button>; })}<button title="Logout" onClick={onLogout} className="ml-auto flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 px-3 py-2 text-[11px] font-black text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm"><Icons.logout className="h-5 w-5" /><span>Logout</span></button></div></nav>;
+  return <nav className="fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 sm:px-6"><div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto rounded-[1.75rem] border border-[#d7e6f7] bg-white/95 p-2 shadow-[0_18px_60px_rgba(0,91,170,0.14)] backdrop-blur-xl"><div className="hidden shrink-0 items-center gap-3 border-r border-[#d7e6f7] px-3 pr-4 md:flex"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f]"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black text-[#102f52]">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#005baa]">{department.subtitle}</p></div></div>{nav.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} title={item.label} onClick={() => setActive(item.id)} className={`flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm ${selected ? "bg-[#ffd23f] text-[#102f52] shadow-sm" : "text-[#315577] hover:bg-[#eef5ff] hover:text-[#005baa]"}`}><Icon className="h-5 w-5" /><span>{item.label}</span></button>; })}<button title="Logout" onClick={onLogout} className="ml-auto flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d7e6f7] px-3 py-2 text-[11px] font-black text-[#315577] transition hover:bg-[#eef5ff] hover:text-[#005baa] sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm"><Icons.logout className="h-5 w-5" /><span>Logout</span></button></div></nav>;
 }
 
 function Header({ active, terms, selectedTermCode, setSelectedTermCode }) {
   const titles = {
     dashboard: ["Overview", "Department Dashboard", "Live infographics of lecturer distribution, expertise, teaching load, and availability."],
     lecturers: ["Directory", "Lecturers", "Search, filter, sort, add, edit, or remove lecturer records."],
-    plotting: ["Course Plotting", "Plot lecturers to courses", "Assign which courses each lecturer will teach for the selected term."],
+    plotting: ["Course Plotting", "Plan classes and assign lecturers", "Set class counts by course, assign lecturers by expertise, and export plotting rows."],
     courses: ["Catalog", "Courses", "The English Department course catalog used for term-based plotting."],
     terms: ["Academic Calendar", "Terms / Semesters", "Define academic terms and choose which one is active for plotting."],
   };
   const [eyebrow, title, desc] = titles[active];
   const showTermPicker = active !== "lecturers";
   const termSelectValue = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : terms[0]?.code || "";
-  return <div className="mb-6"><p className="text-xs font-black uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p><h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">{title}</h1><p className="mt-2 flex max-w-3xl flex-wrap items-center gap-2 text-sm leading-6 text-slate-500"><span>{desc}</span>{showTermPicker && (terms.length ? <select aria-label="Select term" value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-bold text-slate-700 outline-none focus:border-blue-500">{terms.map((term) => <option key={term.code} value={term.code}>{term.name}</option>)}</select> : <b className="text-slate-700">No active term selected.</b>)}</p></div>;
+  return <div className="mb-6"><p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">{eyebrow}</p><h1 className="mt-1 text-3xl font-black tracking-tight text-[#102f52] md:text-4xl">{title}</h1><p className="mt-2 flex max-w-3xl flex-wrap items-center gap-2 text-sm leading-6 text-[#4f6478]"><span>{desc}</span>{showTermPicker && (terms.length ? <select aria-label="Select term" value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="rounded-lg border border-[#d7e6f7] bg-white px-2 py-1 text-sm font-bold text-[#102f52] outline-none focus:border-[#005baa]">{terms.map((term) => <option key={term.code} value={term.code}>{term.name}</option>)}</select> : <b className="text-[#102f52]">No active term selected.</b>)}</p></div>;
 }
 
 function Stat({ label, value, icon: Icon, tone = "blue", note }) {
-  return <Card className={`p-5 ${tone === "amber" ? "border-amber-200 bg-amber-50/40" : ""}`}><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">{label}</p><p className="mt-3 text-4xl font-black text-slate-950">{value}</p>{note && <p className="mt-1 text-xs text-slate-500">{note}</p>}</div><div className={`rounded-xl p-3 ${tone === "amber" ? "bg-amber-300 text-slate-900" : "bg-blue-50 text-blue-700"}`}><Icon /></div></div></Card>;
+  return <Card className={`p-5 ${tone === "amber" ? "border-[#f0d264] bg-[#fff9df]" : ""}`}><div className="flex items-start justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-[#315577]">{label}</p><p className="mt-3 text-4xl font-light text-[#102f52]">{value}</p>{note && <p className="mt-1 text-xs font-normal text-[#4f6478]">{note}</p>}</div><div className={`rounded-xl p-3 ${tone === "amber" ? "bg-[#ffd23f] text-[#102f52]" : "bg-[#eef5ff] text-[#005baa]"}`}><Icon /></div></div></Card>;
 }
 
 function Dashboard({ lecturers, courses }) {
@@ -643,7 +843,7 @@ function Dashboard({ lecturers, courses }) {
   const degreeData = Object.entries(filtered.reduce((acc, lecturer) => ({ ...acc, [lecturer.degree]: (acc[lecturer.degree] || 0) + 1 }), {})).map(([name, value]) => ({ name, value }));
   const plottedCountData = getPlottedCountData(filtered);
   const availableData = filtered.map((lecturer) => ({ name: lecturer.name.split(" ")[0], available: lecturer.available, plotted: lecturer.plotted.length }));
-  return <div className="space-y-6"><Card className="p-5"><p className="mb-4 text-xs font-black uppercase tracking-[0.25em] text-slate-500">Filter Infographics</p><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><SelectBox label="Academic Degree" value={filters.degree} onChange={(value) => setFilters({ ...filters, degree: value })} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Course Expertise" value={filters.expertise} onChange={(value) => setFilters({ ...filters, expertise: value })} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Plotted Course" value={filters.plotted} onChange={(value) => setFilters({ ...filters, plotted: value })} options={courses.map((course) => course.title)} /><SelectBox label="Courses Available" value={filters.available} onChange={(value) => setFilters({ ...filters, available: value })} options={["0", "1", "2", "3", "4"]} /></div></Card><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat label="Total Lecturers" value={filtered.length} icon={Icons.users} /><Stat label="Total Plotted Courses" value={filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0)} icon={Icons.book} note="Filtered result" /><Stat label="Total Available Slots" value={filtered.reduce((sum, lecturer) => sum + lecturer.available, 0)} icon={Icons.chart} /><Stat label="Avg. Available / Lecturer" value={filtered.length ? (filtered.reduce((sum, lecturer) => sum + lecturer.available, 0) / filtered.length).toFixed(1) : "0"} icon={Icons.check} tone="amber" note="Range 0–4" /></div><div className="grid gap-6 md:grid-cols-2"><Card className="p-5"><h3 className="font-black text-slate-950">By Academic Degree</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={degreeData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{degreeData.map((_, index) => <Cell key={index} fill={["#1d4ed8", "#60a5fa", "#facc15", "#14b8a6"][index % 4]} />)}</Pie><Tooltip /><Legend /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5"><h3 className="font-black text-slate-950">By Number of Plotted Courses</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={plottedCountData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{plottedCountData.map((_, index) => <Cell key={index} fill={["#1d4ed8", "#60a5fa", "#facc15", "#14b8a6", "#94a3b8"][index % 5]} />)}</Pie><Tooltip /><Legend /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5 md:col-span-2"><h3 className="font-black text-slate-950">By Course Expertise</h3><div className="h-72"><ResponsiveContainer><BarChart data={expertiseData} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={155} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" fill="#1d4ed8" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div></Card></div><Card className="p-5"><h3 className="font-black text-slate-950">Lecturer Load and Availability</h3><div className="h-80"><ResponsiveContainer><BarChart data={availableData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><Tooltip /><Legend /><Bar dataKey="plotted" fill="#1d4ed8" radius={[8, 8, 0, 0]} /><Bar dataKey="available" fill="#facc15" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></div></Card></div>;
+  return <div className="space-y-6"><Card className="p-5"><p className="mb-4 text-xs font-medium uppercase tracking-[0.2em] text-[#005baa]">Filter Infographics</p><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><SelectBox label="Academic Degree" value={filters.degree} onChange={(value) => setFilters({ ...filters, degree: value })} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Course Expertise" value={filters.expertise} onChange={(value) => setFilters({ ...filters, expertise: value })} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Plotted Course" value={filters.plotted} onChange={(value) => setFilters({ ...filters, plotted: value })} options={courses.map((course) => course.title)} /><SelectBox label="Courses Available" value={filters.available} onChange={(value) => setFilters({ ...filters, available: value })} options={["0", "1", "2", "3", "4"]} /></div></Card><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat label="Total Lecturers" value={filtered.length} icon={Icons.users} /><Stat label="Total Plotted Courses" value={filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0)} icon={Icons.book} note="Filtered result" /><Stat label="Total Available Slots" value={filtered.reduce((sum, lecturer) => sum + lecturer.available, 0)} icon={Icons.chart} /><Stat label="Avg. Available / Lecturer" value={filtered.length ? (filtered.reduce((sum, lecturer) => sum + lecturer.available, 0) / filtered.length).toFixed(1) : "0"} icon={Icons.check} tone="amber" note="Range 0–4" /></div><div className="grid gap-6 md:grid-cols-2"><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Academic Degree</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={degreeData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{degreeData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Number of Plotted Courses</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={plottedCountData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{plottedCountData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5 md:col-span-2"><h3 className="font-medium text-[#102f52]">By Course Expertise</h3><div className="h-72"><ResponsiveContainer><BarChart data={expertiseData} layout="vertical"><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis type="number" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis dataKey="name" type="category" width={155} tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Bar dataKey="value" fill="#005baa" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div></Card></div><Card className="p-5"><h3 className="font-medium text-[#102f52]">Lecturer Load and Availability</h3><div className="h-80"><ResponsiveContainer><BarChart data={availableData}><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /><Bar dataKey="plotted" fill="#005baa" radius={[8, 8, 0, 0]} /><Bar dataKey="available" fill="#ffd23f" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></div></Card></div>;
 }
 
 function LecturerForm({ initial, onSave, onClose }) {
@@ -656,7 +856,7 @@ function LecturerForm({ initial, onSave, onClose }) {
 }
 
 function LecturerInfoCard({ lecturer, courses }) {
-  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.25em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-black text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div><div className="grid gap-4 sm:grid-cols-2"><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-bold text-slate-800">{lecturer.email}</p></Card><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-bold text-slate-800">{lecturer.phone}</p></Card></div><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></Card><Card className="p-4"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></Card></div>;
+  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div><div className="grid gap-4 sm:grid-cols-2"><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card></div><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></Card></div>;
 }
 
 function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode }) {
@@ -665,6 +865,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   const [degree, setDegree] = useState("All");
   const [expertise, setExpertise] = useState("All");
   const [available, setAvailable] = useState("All");
+  const [plottedClasses, setPlottedClasses] = useState("All");
   const [sort, setSort] = useState("name");
   const [sortDirection, setSortDirection] = useState("asc");
   const [modal, setModal] = useState(null);
@@ -675,11 +876,11 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setSortDirection((current) => sort === value ? current === "asc" ? "desc" : "asc" : "asc");
     setSort(value);
   };
-  const sortHeader = (label, value) => <button type="button" onClick={() => sortBy(value)} className="inline-flex items-center gap-1 font-black uppercase tracking-[0.15em] text-slate-500 hover:text-blue-700">{label}{sort === value && <span>{sortDirection === "asc" ? "↑" : "↓"}</span>}</button>;
-  const rows = useMemo(() => lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.phone, lecturer.degree, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => degree === "All" || lecturer.degree === degree).filter((lecturer) => expertise === "All" || lecturer.expertise.includes(expertise)).filter((lecturer) => available === "All" || String(lecturer.available) === available).sort((a, b) => {
+  const sortHeader = (label, value) => <button type="button" onClick={() => sortBy(value)} className="inline-flex items-center gap-1 font-medium uppercase tracking-[0.15em] text-slate-500 hover:text-blue-700">{label}{sort === value && <span>{sortDirection === "asc" ? "↑" : "↓"}</span>}</button>;
+  const rows = useMemo(() => lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.phone, lecturer.degree, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => degree === "All" || lecturer.degree === degree).filter((lecturer) => expertise === "All" || lecturer.expertise.includes(expertise)).filter((lecturer) => available === "All" || String(lecturer.available) === available).filter((lecturer) => plottedClasses === "All" || String(lecturer.plotted.length) === plottedClasses).sort((a, b) => {
     const result = sort === "plotted" || sort === "available" ? Number(a[sort === "plotted" ? "plotted" : "available"]?.length ?? a[sort] ?? 0) - Number(b[sort === "plotted" ? "plotted" : "available"]?.length ?? b[sort] ?? 0) : String(a[sort] ?? "").localeCompare(String(b[sort] ?? ""));
     return sortDirection === "asc" ? result : -result;
-  }), [lecturers, courses, query, degree, expertise, available, sort, sortDirection]);
+  }), [lecturers, courses, query, degree, expertise, available, plottedClasses, sort, sortDirection]);
   const save = (item) => {
     const availableSlots = Math.max(0, Math.min(4, Number(item.available) || 0));
     setLecturers((prev) => prev.some((lecturer) => lecturer.id === item.id) ? prev.map((lecturer) => lecturer.id === item.id ? { ...lecturer, ...item, available: lecturer.available, plotted: lecturer.plotted } : lecturer) : [{ ...item, available: availableSlots, plotted: [] }, ...prev]);
@@ -725,31 +926,337 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     }
   };
   const remove = (id) => setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
-  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-semibold ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, or course name..." /><div className="mt-4 grid gap-3 md:grid-cols-5"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "plotted", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setSort("name"); setSortDirection("asc"); }}>Reset</Button></div></Card><Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-black">Expertise</th><th className="px-4 py-4 font-black">Plotted Courses</th><th className="px-4 py-4 font-black">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-bold text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-black text-slate-900">{lecturer.name}</td><td className="px-4 py-4 font-bold">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, or course name..." /><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Plotted classes" value={plottedClasses} onChange={setPlottedClasses} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "plotted", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setPlottedClasses("All"); setSort("name"); setSortDirection("asc"); }}>Reset</Button></div></Card><Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
-function Plotting({ lecturers, setLecturers, courses }) {
+function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseClassPlans, setCourseClassPlans }) {
+  const importInputRef = useRef(null);
+  const [plottingMode, setPlottingMode] = useState("course");
   const [query, setQuery] = useState("");
-  const [plotOrder, setPlotOrder] = useState("Default");
-  const [editing, setEditing] = useState(null);
-  const matchingRows = lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query)));
-  const rows = [...matchingRows].sort((a, b) => {
-    if (plotOrder === "Not plotted first") {
-      const plottedResult = Number(a.plotted.length > 0) - Number(b.plotted.length > 0);
-      return plottedResult || a.name.localeCompare(b.name);
+  const [lecturerSort, setLecturerSort] = useState("Default");
+  const [importMessage, setImportMessage] = useState("");
+  const [selectedCourseCode, setSelectedCourseCode] = useState("");
+  const [selectedLecturerId, setSelectedLecturerId] = useState("");
+  const plannedCounts = useMemo(() => getCourseClassPlan(courseClassPlans, selectedTermCode), [courseClassPlans, selectedTermCode]);
+  const assignmentMap = useMemo(() => getCourseClassAssignmentPlan(courseClassPlans, selectedTermCode, lecturers, courses), [courseClassPlans, selectedTermCode, lecturers, courses]);
+  const classCounts = useMemo(() => getCourseClassCounts(lecturers, courses, plannedCounts, assignmentMap), [lecturers, courses, plannedCounts, assignmentMap]);
+  const plannedTotal = courses.reduce((sum, course) => sum + (classCounts[course.code] || 0), 0);
+  const assignedTotal = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter(Boolean).length, 0);
+  const visibleCourses = courses.filter((course) => includes(course.code, query) || includes(course.title, query)).sort((a, b) => a.code.localeCompare(b.code));
+  const visibleLecturers = lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.degree, lecturer.expertise.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).sort((a, b) => {
+    if (lecturerSort === "Not plotted first") {
+      return Number(a.plotted.length > 0) - Number(b.plotted.length > 0) || a.name.localeCompare(b.name);
     }
-    if (plotOrder === "Most plotted first") return b.plotted.length - a.plotted.length || a.name.localeCompare(b.name);
-    return 0;
+    if (lecturerSort === "Most plotted first") {
+      return b.plotted.length - a.plotted.length || a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
   });
-  const startEditing = (lecturer) => setEditing({ ...lecturer, plotCounts: Object.fromEntries(getPlottedCourseCounts(lecturer.plotted).map(({ code, count }) => [code, count])) });
-  const setPlotCount = (code, value) => setEditing((current) => ({ ...current, plotCounts: { ...(current.plotCounts || {}), [code]: toClassCount(value) } }));
-  const savePlot = () => {
-    const { plotCounts, ...editingLecturer } = editing;
-    const item = { ...editingLecturer, plotted: buildPlottedFromCounts(plotCounts || {}), available: Number(editing.available) };
-    setLecturers((prev) => prev.map((lecturer) => lecturer.id === editing.id ? item : lecturer));
-    setEditing(null);
+  const selectedLecturer = lecturers.find((lecturer) => lecturer.id === selectedLecturerId);
+  const selectedLecturerCourseCounts = useMemo(() => Object.fromEntries(getPlottedCourseCounts(selectedLecturer?.plotted || []).map(({ code, count }) => [code, count])), [selectedLecturer]);
+  const updateCoursePlan = (code, value) => {
+    const count = toClassCount(value);
+    setCourseClassPlans((prev) => {
+      const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
+      return { ...prev, [selectedTermCode]: { counts: { ...counts, [code]: count }, assignments: { ...assignments, [code]: assignments[code] || assignmentMap[code] || [] } } };
+    });
   };
-  return <div className="space-y-5"><Card className="p-4"><div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search lecturer by ID, name, email, expertise, or course name..." /><label className="space-y-1.5"><span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Assignment order</span><div className="relative"><select value={plotOrder} onChange={(event) => setPlotOrder(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm text-slate-700 outline-none"><option>Default</option><option>Not plotted first</option><option>Most plotted first</option></select><Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" /></div></label></div></Card>{rows.map((lecturer) => <Card key={lecturer.id} className="p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-black text-blue-700">{lecturer.id}</span><Badge tone="slate">{lecturer.degree}</Badge><h3 className="text-lg font-black text-slate-950">{lecturer.name}</h3></div><p className="text-sm text-slate-500">{lecturer.email}</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div><div className="mt-3 flex flex-wrap gap-2"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></div><div className="flex items-center gap-4"><div className="text-center"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Available</p><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></div><Button variant="secondary" onClick={() => startEditing(lecturer)}>Edit assignments</Button></div></div></Card>)}{editing && <Modal title={`Edit assignments - ${editing.name}`} onClose={() => setEditing(null)}><div className="space-y-3"><p className="text-sm text-slate-500">Set the number of classes for each course.</p><div className="grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-slate-200 p-3 sm:grid-cols-2">{courses.map((course) => <label key={course.code} className="grid grid-cols-[1fr_76px] items-center gap-3 text-sm"><span>{course.title} <b className="text-xs text-slate-400">({course.code})</b></span><input type="number" min="0" value={editing.plotCounts?.[course.code] ?? 0} onChange={(event) => setPlotCount(course.code, event.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-bold text-slate-900 outline-none focus:border-blue-500" /></label>)}</div><PlainInput label="Available slots" type="number" value={editing.available} onChange={(value) => setEditing({ ...editing, available: value })} /><div className="flex justify-end gap-3"><Button variant="secondary" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={savePlot}>Save assignments</Button></div></div></Modal>}</div>;
+  const assignLecturer = (courseCode, classIndex, lecturerId) => {
+    const count = classCounts[courseCode] || 0;
+    const nextCourseAssignments = Array.from({ length: count }, (_, index) => assignmentMap[courseCode]?.[index] || "");
+    const currentLecturerId = nextCourseAssignments[classIndex] || "";
+    if (lecturerId && lecturerId !== currentLecturerId && countLecturerAssignments(assignmentMap, lecturerId) >= LECTURER_CLASS_LIMIT) return;
+    nextCourseAssignments[classIndex] = lecturerId;
+    const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
+    setCourseClassPlans((prev) => {
+      const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
+      return { ...prev, [selectedTermCode]: { counts: { ...counts, [courseCode]: Math.max(toClassCount(counts[courseCode]), count) }, assignments: { ...assignments, [courseCode]: nextCourseAssignments } } };
+    });
+    setLecturers((prev) => {
+      return applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap);
+    });
+  };
+  const setLecturerCourseCount = (courseCode, value, lecturerId = selectedLecturer?.id) => {
+    if (!lecturerId) return;
+    const currentAssignments = assignmentMap[courseCode] || [];
+    const currentCount = currentAssignments.filter((id) => id === lecturerId).length;
+    const lecturerTotal = countLecturerAssignments(assignmentMap, lecturerId);
+    const maxCountForCourse = currentCount + Math.max(0, LECTURER_CLASS_LIMIT - lecturerTotal);
+    const requestedCount = Math.min(toClassCount(value), maxCountForCourse);
+    if (requestedCount === currentCount) return;
+
+    let nextCourseAssignments = [...currentAssignments];
+    if (requestedCount > currentCount) {
+      const additions = requestedCount - currentCount;
+      let remaining = additions;
+      nextCourseAssignments = nextCourseAssignments.map((id) => {
+        if (remaining > 0 && !id) {
+          remaining -= 1;
+          return lecturerId;
+        }
+        return id;
+      });
+      while (remaining > 0) {
+        nextCourseAssignments.push(lecturerId);
+        remaining -= 1;
+      }
+    } else {
+      let remaining = currentCount - requestedCount;
+      for (let index = nextCourseAssignments.length - 1; index >= 0 && remaining > 0; index -= 1) {
+        if (nextCourseAssignments[index] === lecturerId) {
+          nextCourseAssignments[index] = "";
+          remaining -= 1;
+        }
+      }
+    }
+
+    const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
+    setCourseClassPlans((prev) => {
+      const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
+      return { ...prev, [selectedTermCode]: { counts: { ...counts, [courseCode]: Math.max(toClassCount(counts[courseCode]), nextCourseAssignments.length) }, assignments: { ...assignments, [courseCode]: nextCourseAssignments } } };
+    });
+    setLecturers((prev) => applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap));
+  };
+  const handleImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportMessage("");
+    try {
+      if (!selectedTermCode) throw new Error("Create or select a term before importing plotting data.");
+      const rawRows = file.name.toLowerCase().endsWith(".csv") ? rowsToObjects(parseCSV(await file.text())) : await parseXLSX(file);
+      const imported = mapImportedPlottingRows(rawRows, lecturers, courses);
+      const importedClassCount = Object.values(imported.counts).reduce((sum, count) => sum + count, 0);
+      if (!importedClassCount) throw new Error("No valid plotting rows found. Use columns Idtutor, Nama, Kelas, and Nama MK.");
+      const nextAssignmentMap = mergeAssignmentMapWithLecturerLimit(assignmentMap, imported.assignments);
+      setCourseClassPlans((prev) => {
+        const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
+        return { ...prev, [selectedTermCode]: { counts: { ...counts, ...imported.counts }, assignments: { ...assignments, ...nextAssignmentMap } } };
+      });
+      setLecturers((prev) => applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap));
+      const warnings = [
+        imported.ignoredCourses.length ? `${imported.ignoredCourses.length} unknown course(s)` : "",
+        imported.ignoredLecturers.length ? `${imported.ignoredLecturers.length} unknown lecturer(s)` : "",
+      ].filter(Boolean).join("; ");
+      const firstImportedCourseCode = Object.keys(imported.counts)[0] || "";
+      if (firstImportedCourseCode) setSelectedCourseCode(firstImportedCourseCode);
+      setImportMessage(`Imported ${importedClassCount} plotting ${importedClassCount === 1 ? "row" : "rows"}${warnings ? `; skipped ${warnings}.` : "."}`);
+    } catch (error) {
+      setImportMessage(error.message || "Import failed.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+  const lecturerOptionsForCourse = (course) => [...lecturers].sort((a, b) => Number(expertiseMatchesCourse(b, course)) - Number(expertiseMatchesCourse(a, course)) || a.name.localeCompare(b.name));
+  return (
+    <div className="space-y-5">
+      <Card className="p-4">
+        <div className="grid gap-4 xl:grid-cols-[220px_minmax(280px,1fr)_auto] xl:items-end">
+          <label className="space-y-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Plotting mode</span>
+            <div className="relative">
+              <select value={plottingMode} onChange={(event) => { setPlottingMode(event.target.value); setQuery(""); }} className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm font-normal text-[#3f4f58] outline-none">
+                <option value="course">Plotting by course</option>
+                <option value="lecturer">Plotting by lecturer</option>
+              </select>
+              <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+            </div>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Search</span>
+            <TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder={plottingMode === "course" ? "Search courses by code or title..." : "Search lecturers by ID, name, expertise, or course..."} />
+          </label>
+          <div className="space-y-1.5">
+            <span className="block text-[10px] font-medium uppercase tracking-[0.18em] text-transparent">Actions</span>
+            <div className="flex flex-wrap gap-3">
+              <input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} />
+              <Button variant="secondary" className="h-12 whitespace-nowrap px-4" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import plotting</Button>
+              <Button variant="secondary" className="h-12 whitespace-nowrap px-4" onClick={() => exportPlottingToXLSX(lecturers, courses, plannedCounts, assignmentMap)} disabled={!plannedTotal}><Icons.download className="h-4 w-4" />Export plotting XLSX</Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+      {importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-[#dff3e6] text-[#315f45]" : "bg-[#fde2e2] text-[#8a3a3a]"}`}>{importMessage}</p>}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Stat label="Planned Classes" value={plannedTotal} icon={Icons.file} />
+        <Stat label="Assigned Classes" value={assignedTotal} icon={Icons.check} tone={assignedTotal === plannedTotal && plannedTotal ? "amber" : "blue"} />
+        <Stat label="Unassigned Classes" value={Math.max(0, plannedTotal - assignedTotal)} icon={Icons.users} />
+      </div>
+      {plottingMode === "course" ? (
+        <Card className="overflow-hidden">
+          <div className="border-b border-[#dce9e6] p-5">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#6d7d86]">Courses</p>
+            <p className="mt-1 text-sm text-[#61717b]">Open a course row to plan classes and assign lecturers.</p>
+          </div>
+          <div className="divide-y divide-[#edf3f1]">
+            {visibleCourses.map((course) => {
+              const planned = classCounts[course.code] || 0;
+              const assigned = (assignmentMap[course.code] || []).filter(Boolean).length;
+              const selected = selectedCourseCode === course.code;
+              const lecturerOptions = selected ? lecturerOptionsForCourse(course) : [];
+              return (
+                <div key={course.code} className={selected ? "bg-[#fbfdf8]" : ""}>
+                  <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+                    <button type="button" onClick={() => setSelectedCourseCode(selected ? "" : course.code)} className="min-w-0 flex-1 text-left">
+                      <p className="text-sm font-normal text-[#315577]">{course.code}</p>
+                      <p className="mt-1 font-medium text-[#26353f]">{course.title}</p>
+                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Badge tone={assigned >= planned && planned ? "green" : planned ? "amber" : "slate"}>{assigned} / {planned}</Badge>
+                      <Button variant="secondary" onClick={() => setSelectedCourseCode(selected ? "" : course.code)}>{selected ? "Close" : "Plot"}</Button>
+                    </div>
+                  </div>
+                  {selected && (
+                    <div className="px-4 pb-5">
+                      <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-sm font-normal text-[#315577]">{course.code}</p>
+                            <h3 className="text-xl font-medium text-[#26353f]">{course.title}</h3>
+                            <p className="mt-1 text-sm text-[#61717b]">Plan classes, then assign one lecturer for each class in this course.</p>
+                          </div>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <label className="space-y-1.5">
+                              <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Planned classes</span>
+                              <input type="number" min="0" max={MAX_CLASS_ASSIGNMENTS_PER_COURSE} value={planned} onChange={(event) => updateCoursePlan(course.code, event.target.value)} className="w-28 rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]" />
+                            </label>
+                            <Badge tone={assigned >= planned && planned ? "green" : planned ? "amber" : "slate"}>{assigned} assigned</Badge>
+                          </div>
+                        </div>
+                        <div className="mt-5 grid gap-3 md:grid-cols-2">
+                          {Array.from({ length: planned }, (_, index) => {
+                            const selectedId = assignmentMap[course.code]?.[index] || "";
+                            const selectedClassLecturer = lecturers.find((lecturer) => lecturer.id === selectedId);
+                            return (
+                              <label key={`${course.code}-${index}`} className="space-y-1.5 rounded-xl border border-[#dce9e6] bg-[#fffffb] p-3">
+                                <span className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-[0.15em] text-[#6d7d86]">
+                                  <span>{course.code}.{index + 1}</span>
+                                  {selectedClassLecturer && expertiseMatchesCourse(selectedClassLecturer, course) && <Badge tone="green">Expertise match</Badge>}
+                                </span>
+                                <div className="relative">
+                                  <select value={selectedId} onChange={(event) => assignLecturer(course.code, index, event.target.value)} className="w-full appearance-none rounded-lg border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 pr-9 text-sm font-normal text-[#3f4f58] outline-none focus:border-[#9bbfe8]">
+                                    <option value="">Unassigned</option>
+                                    {lecturerOptions.map((lecturer) => {
+                                      const lecturerTotal = countLecturerAssignments(assignmentMap, lecturer.id);
+                                      const isFull = lecturerTotal >= LECTURER_CLASS_LIMIT && selectedId !== lecturer.id;
+                                      const labelPrefix = isFull ? "Full - " : expertiseMatchesCourse(lecturer, course) ? "Recommended - " : "";
+                                      return <option key={lecturer.id} value={lecturer.id} disabled={isFull}>{labelPrefix}{lecturer.name} ({lecturer.id})</option>;
+                                    })}
+                                  </select>
+                                  <Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#8aa1ad]" />
+                                </div>
+                                {selectedClassLecturer && <p className="text-xs text-[#61717b]">{selectedClassLecturer.expertise.join(", ") || "No expertise listed"}</p>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {!planned && <div className="mt-5 rounded-xl border border-dashed border-[#dce9e6] bg-[#f7fbf6] p-6 text-center text-sm text-[#61717b]">Set planned classes for this course to begin assigning lecturers.</div>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {visibleCourses.length === 0 && <p className="p-6 text-center text-sm text-[#61717b]">No courses match your search.</p>}
+          </div>
+        </Card>
+      ) : (
+        <>
+          <Card className="overflow-hidden">
+            <div className="flex flex-col gap-4 border-b border-[#dce9e6] p-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#6d7d86]">Lecturers</p>
+                <p className="mt-1 text-sm text-[#61717b]">Review lecturers, then open a pop-up card to adjust plotted course counts.</p>
+              </div>
+              <label className="w-full space-y-1.5 lg:w-56">
+                <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Sort</span>
+                <div className="relative">
+                  <select value={lecturerSort} onChange={(event) => setLecturerSort(event.target.value)} className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm font-normal text-[#3f4f58] outline-none">
+                    <option>Default</option>
+                    <option>Not plotted first</option>
+                    <option>Most plotted first</option>
+                  </select>
+                  <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                </div>
+              </label>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <thead className="bg-[#f7fbf6] text-[10px] uppercase tracking-[0.15em] text-[#6d7d86]">
+                  <tr>
+                    <th className="px-4 py-4 font-medium">ID</th>
+                    <th className="px-4 py-4 font-medium">Degree</th>
+                    <th className="px-4 py-4 font-medium">Full Name</th>
+                    <th className="px-4 py-4 font-medium">#Plotted</th>
+                    <th className="px-4 py-4 font-medium">Available</th>
+                    <th className="px-4 py-4 font-medium">Expertise</th>
+                    <th className="px-4 py-4 font-medium">Plotted Courses</th>
+                    <th className="px-4 py-4 font-medium">Plot</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleLecturers.map((lecturer) => {
+                    const selected = selectedLecturerId === lecturer.id;
+                    return (
+                      <tr key={lecturer.id} className={`border-t border-[#edf3f1] ${selected ? "bg-[#fbfdf8]" : ""}`}>
+                        <td className="px-4 py-4 font-normal text-[#315577]">{lecturer.id}</td>
+                        <td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td>
+                        <td className="px-4 py-4 font-medium text-[#26353f]">{lecturer.name}</td>
+                        <td className="px-4 py-4 font-normal text-[#3f4f58]">{lecturer.plotted.length}</td>
+                        <td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td>
+                        <td className="px-4 py-4"><div className="flex max-w-sm flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td>
+                        <td className="px-4 py-4"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td>
+                        <td className="px-4 py-4">
+                          <Button variant="secondary" onClick={() => setSelectedLecturerId(lecturer.id)}>Plot</Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {visibleLecturers.length === 0 && <p className="p-6 text-center text-sm text-[#61717b]">No lecturers match your search.</p>}
+          </Card>
+          {selectedLecturer && (
+            <Modal title="Plot lecturer" onClose={() => setSelectedLecturerId("")}>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-normal text-[#315577]">{selectedLecturer.id}</p>
+                      <h3 className="text-xl font-medium text-[#26353f]">{selectedLecturer.name}</h3>
+                      <p className="mt-1 text-sm font-normal text-[#61717b]">{selectedLecturer.expertise.join(", ") || "No expertise listed"}</p>
+                    </div>
+                    <Badge tone={selectedLecturer.plotted.length >= LECTURER_CLASS_LIMIT ? "amber" : selectedLecturer.plotted.length ? "blue" : "slate"}>{selectedLecturer.plotted.length} / {LECTURER_CLASS_LIMIT} assigned classes</Badge>
+                  </div>
+                </div>
+                <div className="grid max-h-[56vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+                  {courses.map((course) => {
+                    const count = selectedLecturerCourseCounts[course.code] || 0;
+                    const lecturerTotal = countLecturerAssignments(assignmentMap, selectedLecturer.id);
+                    const maxCountForCourse = count + Math.max(0, LECTURER_CLASS_LIMIT - lecturerTotal);
+                    const planned = classCounts[course.code] || 0;
+                    const assigned = (assignmentMap[course.code] || []).filter(Boolean).length;
+                    return (
+                      <label key={`${selectedLecturer.id}-${course.code}`} className="grid grid-cols-[1fr_76px] items-center gap-3 rounded-xl border border-[#dce9e6] bg-[#fffffb] p-3">
+                        <span>
+                          <span className="block text-sm font-normal text-[#26353f]">{course.title}</span>
+                          <span className="mt-1 block text-xs font-normal text-[#61717b]">{course.code} · {assigned} / {planned} assigned</span>
+                        </span>
+                        <input type="number" min="0" max={maxCountForCourse} value={count} onChange={(event) => setLecturerCourseCount(course.code, event.target.value, selectedLecturer.id)} className="w-full rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8] disabled:opacity-50" title={maxCountForCourse === 0 ? "This lecturer already has 4 assigned classes." : undefined} disabled={maxCountForCourse === 0} />
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <Button variant="secondary" onClick={() => setSelectedLecturerId("")}>Done</Button>
+                </div>
+              </div>
+            </Modal>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function CourseForm({ initial, onSave, onClose }) {
@@ -757,19 +1264,19 @@ function CourseForm({ initial, onSave, onClose }) {
   return <div className="space-y-4"><FormGrid><PlainInput label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value.toUpperCase() })} /><PlainInput label="Credits" type="number" value={form.credits} onChange={(value) => setForm({ ...form, credits: value })} /></FormGrid><PlainInput label="Course title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} /><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!form.code || !form.title} onClick={() => onSave({ ...form, credits: Number(form.credits) })}>Save course</Button></div></div>;
 }
 
-function Courses({ courses, setCourses, setLecturers, setTermPlottings }) {
+function Courses({ courses, setCourses, setLecturers, setTermPlottings, setCourseClassPlans }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("code");
   const [modal, setModal] = useState(null);
   const rows = useMemo(() => courses.filter((course) => includes(course.code, query) || includes(course.title, query) || includes(course.credits, query)).sort((a, b) => String(a[sort]).localeCompare(String(b[sort]))), [courses, query, sort]);
   const save = (item) => { setCourses((prev) => prev.some((course) => course.code === item.code) ? prev.map((course) => course.code === item.code ? item : course) : [item, ...prev]); setModal(null); };
-  const remove = (code) => { setCourses((prev) => prev.filter((course) => course.code !== code)); setLecturers((prev) => prev.map((lecturer) => ({ ...lecturer, plotted: lecturer.plotted.filter((item) => item !== code) }))); setTermPlottings((prev) => prev.map((row) => ({ ...row, plotted: row.plotted.filter((item) => item !== code) }))); };
-  return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New course</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by code, title, or credits..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["code", "title", "credits"]} /></Card><Card className="divide-y divide-slate-100">{rows.map((course) => <div key={course.code} className="flex items-center justify-between gap-4 p-4"><div className="flex items-center gap-4"><div className="rounded-xl bg-blue-50 p-3 text-blue-700"><Icons.book /></div><div><p className="font-black text-slate-950"><span className="text-blue-700">{course.code}</span> · {course.title}</p><p className="text-sm text-slate-500">{course.credits} credits</p></div></div><div className="flex gap-3"><button onClick={() => setModal(course)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(course.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No courses match your search.</p>}</Card>{modal && <Modal title={modal.code ? "Edit course" : "New course"} onClose={() => setModal(null)}><CourseForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  const remove = (code) => { setCourses((prev) => prev.filter((course) => course.code !== code)); setLecturers((prev) => prev.map((lecturer) => ({ ...lecturer, plotted: lecturer.plotted.filter((item) => item !== code) }))); setTermPlottings((prev) => prev.map((row) => ({ ...row, plotted: row.plotted.filter((item) => item !== code) }))); setCourseClassPlans((prev) => Object.fromEntries(Object.entries(prev).map(([termCode, plan]) => [termCode, Object.fromEntries(Object.entries(plan || {}).filter(([courseCode]) => courseCode !== code))]))); };
+  return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New course</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by code, title, or credits..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["code", "title", "credits"]} /></Card><Card className="divide-y divide-slate-100">{rows.map((course) => <div key={course.code} className="flex items-center justify-between gap-4 p-4"><div className="flex items-center gap-4"><div className="rounded-xl bg-blue-50 p-3 text-blue-700"><Icons.book /></div><div><p className="font-medium text-slate-950"><span className="font-normal text-blue-700">{course.code}</span> · {course.title}</p><p className="text-sm font-normal text-slate-500">{course.credits} credits</p></div></div><div className="flex gap-3"><button onClick={() => setModal(course)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(course.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No courses match your search.</p>}</Card>{modal && <Modal title={modal.code ? "Edit course" : "New course"} onClose={() => setModal(null)}><CourseForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function TermForm({ initial, onSave, onClose }) {
   const [form, setForm] = useState(initial || { name: "", code: "", ay: "2025/2026", semester: "Semester 1", active: false });
-  return <div className="space-y-4"><PlainInput label="Term name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} /><PlainInput label="Academic year" value={form.ay} onChange={(value) => setForm({ ...form, ay: value })} /></FormGrid><FormGrid><PlainInput label="Semester" value={form.semester} onChange={(value) => setForm({ ...form, semester: value })} /><label className="mt-7 flex items-center gap-2 text-sm font-bold text-slate-700"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Set as active term</label></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!form.name || !form.code} onClick={() => onSave(form)}>Save term</Button></div></div>;
+  return <div className="space-y-4"><PlainInput label="Term name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Code" value={form.code} onChange={(value) => setForm({ ...form, code: value })} /><PlainInput label="Academic year" value={form.ay} onChange={(value) => setForm({ ...form, ay: value })} /></FormGrid><FormGrid><PlainInput label="Semester" value={form.semester} onChange={(value) => setForm({ ...form, semester: value })} /><label className="mt-7 flex items-center gap-2 text-sm font-normal text-slate-700"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Set as active term</label></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button disabled={!form.name || !form.code} onClick={() => onSave(form)}>Save term</Button></div></div>;
 }
 
 function Terms({ terms, setTerms, onActiveTermChange }) {
@@ -779,7 +1286,7 @@ function Terms({ terms, setTerms, onActiveTermChange }) {
   const rows = terms.filter((term) => [term.name, term.code, term.ay, term.semester, term.active ? "active" : "inactive"].some((value) => includes(value, query))).sort((a, b) => String(a[sort]).localeCompare(String(b[sort])));
   const save = (item) => { setTerms((prev) => { const next = prev.some((term) => term.code === item.code) ? prev.map((term) => term.code === item.code ? item : term) : [item, ...prev]; return item.active ? next.map((term) => ({ ...term, active: term.code === item.code })) : next; }); if (item.active) onActiveTermChange(item.code); setModal(null); };
   const remove = (code) => setTerms((prev) => prev.filter((term) => term.code !== code));
-  return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-black text-slate-950">{term.name}</p><p className="text-sm text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-medium text-slate-950">{term.name}</p><p className="text-sm font-normal text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function LoginScreen({ onLogin }) {
@@ -789,29 +1296,29 @@ function LoginScreen({ onLogin }) {
   const [busy, setBusy] = useState(false);
   const submit = async () => { setError(""); setBusy(true); try { const loggedInEmail = await signIn(email, password); onLogin(loggedInEmail); } catch (err) { setError(err.message || "Authentication failed."); } finally { setBusy(false); } };
   return (
-    <div className="min-h-screen bg-white px-5 py-5 text-slate-950 sm:px-8 lg:px-12">
+    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
         <motion.nav
           initial={{ opacity: 0, y: -18, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-slate-100 bg-white px-5 py-4 shadow-[0_22px_70px_rgba(15,23,42,0.08)] sm:px-7 lg:px-9"
+          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-700 text-white shadow-sm">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
               <Icons.graduation className="h-6 w-6" />
             </span>
             <div>
               <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-700">English Department</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
             </div>
           </div>
 
-          <div className="flex items-center rounded-full bg-slate-100 p-1 text-sm font-black">
-            <button type="button" className="rounded-full px-4 py-2 text-slate-700 sm:px-5">
+          <div className="flex items-center rounded-full bg-[#eef5ff] p-1 text-sm font-black">
+            <button type="button" className="rounded-full px-4 py-2 text-[#315577] sm:px-5">
               Lecturer Database
             </button>
-            <button type="button" className="rounded-full bg-blue-700 px-5 py-2 text-white shadow-sm sm:px-6">
+            <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">
               Login
             </button>
           </div>
@@ -824,16 +1331,16 @@ function LoginScreen({ onLogin }) {
             transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
             className="relative z-10"
           >
-            <div className="mb-7 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+            <div className="mb-7 inline-flex rounded-full border border-[#d7e6f7] bg-white px-4 py-2 text-sm font-semibold text-[#005baa] shadow-sm">
               Lecturer Database
             </div>
-            <h1 className="max-w-2xl text-5xl font-black leading-[0.96] tracking-tight text-slate-950 sm:text-6xl lg:text-7xl">
+            <h1 className="max-w-2xl text-5xl font-black leading-[0.96] tracking-tight text-[#102f52] sm:text-6xl lg:text-7xl">
               Manage lecturers, plot courses, see the big picture.
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">
+            <p className="mt-7 max-w-xl text-lg leading-8 text-[#4f6478]">
               A single database for degrees, expertise, availability and teaching load across the department.
             </p>
-            <p className="mt-10 hidden text-xs font-semibold text-slate-400 lg:block">© 2026 Universitas Terbuka — English Department</p>
+            <p className="mt-10 hidden text-xs font-semibold text-[#7c8ea1] lg:block">© 2026 Universitas Terbuka — English Department</p>
           </motion.div>
 
           <div className="relative mx-auto w-full max-w-2xl lg:mx-0">
@@ -841,45 +1348,45 @@ function LoginScreen({ onLogin }) {
               initial={{ opacity: 0, x: -20, rotate: -3 }}
               animate={{ opacity: 1, x: 0, rotate: -2 }}
               transition={{ duration: 0.65, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -left-8 top-8 hidden rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] lg:block"
+              className="absolute -left-8 top-8 hidden rounded-2xl border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_18px_50px_rgba(0,91,170,0.10)] lg:block"
             >
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-yellow-500">Restricted access</p>
-              <p className="mt-1 text-lg font-black text-slate-950">Department data</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#c99800]">Restricted access</p>
+              <p className="mt-1 text-lg font-black text-[#102f52]">Department data</p>
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0, x: -18, rotate: 4 }}
               animate={{ opacity: 1, x: 0, rotate: 3 }}
               transition={{ duration: 0.65, delay: 0.48, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -bottom-7 left-8 hidden rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] lg:block"
+              className="absolute -bottom-7 left-8 hidden rounded-2xl border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_18px_50px_rgba(0,91,170,0.10)] lg:block"
             >
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-700">Database</p>
-              <p className="mt-1 text-lg font-black text-slate-950">{USE_SUPABASE ? "Configured" : "Not configured"}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">Database</p>
+              <p className="mt-1 text-lg font-black text-[#102f52]">{USE_SUPABASE ? "Configured" : "Not configured"}</p>
             </motion.div>
 
             <motion.section
               initial={{ opacity: 0, y: 28, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.72, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="relative z-10 ml-auto w-full rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.1)] sm:p-7 lg:max-w-md lg:p-8"
+              className="relative z-10 ml-auto w-full rounded-[2rem] border border-[#d7e6f7] bg-white p-5 shadow-[0_28px_90px_rgba(0,91,170,0.14)] sm:p-7 lg:max-w-md lg:p-8"
             >
-              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-slate-500">Restricted access</p>
-              <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Sign in</h2>
-              <p className="mt-3 text-base leading-7 text-slate-500">
+              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-[#005baa]">Restricted access</p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight text-[#102f52] sm:text-4xl">Sign in</h2>
+              <p className="mt-3 text-base leading-7 text-[#4f6478]">
                 {USE_SUPABASE ? "Welcome back! Please sign in to your account." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}
               </p>
 
               <div className="mt-6 space-y-4">
                 <label className="block">
-                  <span className="mb-2 block text-sm font-black text-slate-950">Email</span>
+                  <span className="mb-2 block text-sm font-black text-[#102f52]">Email</span>
                   <TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" />
                 </label>
                 <label className="block">
-                  <span className="mb-2 block text-sm font-black text-slate-950">Password</span>
+                  <span className="mb-2 block text-sm font-black text-[#102f52]">Password</span>
                   <TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />
                 </label>
-                {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
-                <Button className="w-full !rounded-2xl !bg-blue-700 py-3 text-base hover:!bg-blue-800" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>
+                {error && <p className="rounded-xl bg-[#fde2e2] px-3 py-2 text-sm font-semibold text-[#8a3a3a]">{error}</p>}
+                <Button className="w-full !rounded-2xl !bg-[#005baa] py-3 text-base !text-white hover:!bg-[#004984]" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>
                   {busy ? "Processing..." : "Sign in"}
                 </Button>
               </div>
@@ -898,6 +1405,7 @@ export default function App() {
   const [courses, setCourses] = useState([]);
   const [terms, setTerms] = useState([]);
   const [termPlottings, setTermPlottings] = useState([]);
+  const [courseClassPlans, setCourseClassPlans] = useState(getStoredCourseClassPlans);
   const [selectedTermCode, setSelectedTermCode] = useState("");
   const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   const [isHydrated, setIsHydrated] = useState(false);
@@ -954,6 +1462,11 @@ export default function App() {
     loadDatabase();
     return () => { cancelled = true; };
   }, [setHydrated, userEmail]);
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(COURSE_CLASS_PLANS_STORAGE_KEY, JSON.stringify(courseClassPlans));
+  }, [courseClassPlans]);
 
   const activeTermCode = terms.find((term) => term.active)?.code || "";
   const effectiveSelectedTermCode = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : activeTermCode || terms[0]?.code || "";
@@ -1014,9 +1527,9 @@ export default function App() {
   }, [lecturers, effectiveSelectedTermCode]);
   const pageLecturers = active === "dashboard" || active === "lecturers" || active === "plotting" ? termScopedLecturers : lecturers;
   const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
-  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, onActiveTermChange: setSelectedTermCode };
+  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode };
 
   if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
 
-  return <div className="min-h-screen bg-slate-50 pb-32 text-slate-900"><main className="min-w-0 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
+  return <div className="min-h-screen bg-white pb-32 text-[#102f52]"><main className="min-w-0 p-4 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
 }
