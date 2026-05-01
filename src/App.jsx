@@ -836,6 +836,10 @@ function Stat({ label, value, icon: Icon, tone = "blue", note }) {
   return <Card className={`p-5 ${tone === "amber" ? "border-[#f0d264] bg-[#fff9df]" : ""}`}><div className="flex items-start justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-[#315577]">{label}</p><p className="mt-3 text-4xl font-light text-[#102f52]">{value}</p>{note && <p className="mt-1 text-xs font-normal text-[#4f6478]">{note}</p>}</div><div className={`rounded-xl p-3 ${tone === "amber" ? "bg-[#ffd23f] text-[#102f52]" : "bg-[#eef5ff] text-[#005baa]"}`}><Icon /></div></div></Card>;
 }
 
+function SupabaseStatusIcon({ connected, label }) {
+  return <span title={label} aria-label={label} role="status" className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${connected ? "border-[#c6e3d1] bg-[#dff3e6] text-[#315f45]" : "border-[#f3dda2] bg-[#fff0c2] text-[#71540f]"}`}>{connected ? <Icons.check className="h-4 w-4" /> : <Icons.chart className="h-4 w-4" />}</span>;
+}
+
 function Dashboard({ lecturers, courses }) {
   const [filters, setFilters] = useState({ degree: "All", expertise: "All", plotted: "All", available: "All" });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -1584,5 +1588,5 @@ export default function App() {
 
   if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
 
-  return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><Badge tone={isHydrated ? "green" : "amber"}>{dbStatus}</Badge><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
+  return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><SupabaseStatusIcon connected={isHydrated} label={dbStatus} /><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
 }
