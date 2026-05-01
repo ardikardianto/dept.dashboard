@@ -934,6 +934,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const [plottingMode, setPlottingMode] = useState("course");
   const [query, setQuery] = useState("");
   const [lecturerSort, setLecturerSort] = useState("Default");
+  const [lecturerPlottedFilter, setLecturerPlottedFilter] = useState("All");
   const [importMessage, setImportMessage] = useState("");
   const [selectedCourseCode, setSelectedCourseCode] = useState("");
   const [selectedLecturerId, setSelectedLecturerId] = useState("");
@@ -943,7 +944,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const plannedTotal = courses.reduce((sum, course) => sum + (classCounts[course.code] || 0), 0);
   const assignedTotal = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter(Boolean).length, 0);
   const visibleCourses = courses.filter((course) => includes(course.code, query) || includes(course.title, query)).sort((a, b) => a.code.localeCompare(b.code));
-  const visibleLecturers = lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.degree, lecturer.expertise.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).sort((a, b) => {
+  const visibleLecturers = lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.degree, lecturer.expertise.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => lecturerPlottedFilter === "All" || String(lecturer.plotted.length) === lecturerPlottedFilter).sort((a, b) => {
     if (lecturerSort === "Not plotted first") {
       return Number(a.plotted.length > 0) - Number(b.plotted.length > 0) || a.name.localeCompare(b.name);
     }
@@ -1167,17 +1168,33 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                 <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#6d7d86]">Lecturers</p>
                 <p className="mt-1 text-sm text-[#61717b]">Review lecturers, then open a pop-up card to adjust plotted course counts.</p>
               </div>
-              <label className="w-full space-y-1.5 lg:w-56">
-                <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Sort</span>
-                <div className="relative">
-                  <select value={lecturerSort} onChange={(event) => setLecturerSort(event.target.value)} className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm font-normal text-[#3f4f58] outline-none">
-                    <option>Default</option>
-                    <option>Not plotted first</option>
-                    <option>Most plotted first</option>
-                  </select>
-                  <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
-                </div>
-              </label>
+              <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto">
+                <label className="space-y-1.5 lg:w-48">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Plotted courses</span>
+                  <div className="relative">
+                    <select value={lecturerPlottedFilter} onChange={(event) => setLecturerPlottedFilter(event.target.value)} className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm font-normal text-[#3f4f58] outline-none">
+                      <option>All</option>
+                      <option>0</option>
+                      <option>1</option>
+                      <option>2</option>
+                      <option>3</option>
+                      <option>4</option>
+                    </select>
+                    <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                  </div>
+                </label>
+                <label className="space-y-1.5 lg:w-56">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Sort</span>
+                  <div className="relative">
+                    <select value={lecturerSort} onChange={(event) => setLecturerSort(event.target.value)} className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm font-normal text-[#3f4f58] outline-none">
+                      <option>Default</option>
+                      <option>Not plotted first</option>
+                      <option>Most plotted first</option>
+                    </select>
+                    <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                  </div>
+                </label>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-left text-sm">
