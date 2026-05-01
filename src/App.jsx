@@ -848,6 +848,7 @@ function Dashboard({ lecturers, courses }) {
   const availableData = filtered.map((lecturer) => ({ name: lecturer.name.split(" ")[0], available: lecturer.available, plotted: lecturer.plotted.length }));
   useEffect(() => {
     const handleScroll = () => {
+      if (document.activeElement?.closest?.(".mobile-filter-fab")) return;
       setMobileFiltersOpen(false);
       setMobileFiltersVisible(false);
       window.clearTimeout(scrollTimerRef.current);
@@ -947,6 +948,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   };
   useEffect(() => {
     const handleScroll = () => {
+      if (document.activeElement?.closest?.(".mobile-filter-fab")) return;
       setMobileFiltersOpen(false);
       setMobileFiltersVisible(false);
       window.clearTimeout(scrollTimerRef.current);
