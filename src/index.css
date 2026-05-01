@@ -110,6 +110,36 @@ html {
     color: white;
   }
 
+  .mobile-native-filter-select {
+    position: relative;
+    display: inline-flex;
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid #d7e6f7;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.98);
+    color: #315577;
+    box-shadow: 0 12px 28px rgba(0, 91, 170, 0.14);
+  }
+
+  .mobile-native-filter-select.is-active {
+    border-color: #005baa;
+    background: #005baa;
+    color: white;
+  }
+
+  .mobile-native-filter-select select {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    width: 100%;
+    cursor: pointer;
+    opacity: 0;
+  }
+
   .mobile-filter-fab__panel > p {
     margin-bottom: 0 !important;
     border-radius: 999px;
