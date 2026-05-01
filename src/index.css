@@ -108,9 +108,9 @@ html {
     gap: 0.5rem;
   }
 
-  .mobile-filter-fab__rail button {
-    display: inline-flex;
-    min-height: 3rem;
+	  .mobile-filter-fab__rail button {
+	    display: inline-flex;
+	    min-height: 3rem;
     width: 3rem;
     align-items: center;
     justify-content: center;
@@ -118,11 +118,11 @@ html {
     border: 1px solid #f0d264;
     background: #ffd23f;
     padding: 0;
-    color: #102f52;
-    font-size: 0;
-    font-weight: 800;
-    box-shadow: 0 18px 45px rgba(0, 91, 170, 0.18);
-  }
+	    color: #102f52;
+	    font-size: 0;
+	    font-weight: 800;
+	    box-shadow: none;
+	  }
 
   .mobile-filter-fab__rail button.is-active {
     border-color: #f0d264;
@@ -130,8 +130,8 @@ html {
     color: #102f52;
   }
 
-  .mobile-native-filter-select {
-    position: relative;
+	  .mobile-native-filter-select {
+	    position: relative;
     display: inline-flex;
     height: 3rem;
     width: 3rem;
@@ -140,17 +140,17 @@ html {
     overflow: hidden;
     border: 1px solid #f0d264;
     border-radius: 999px;
-    background: #ffd23f;
-    color: #102f52;
-    box-shadow: 0 18px 45px rgba(0, 91, 170, 0.18);
-  }
+	    background: #ffd23f;
+	    color: #102f52;
+	    box-shadow: none;
+	  }
 
-  .mobile-native-filter-select.is-active {
-    border-color: #f0d264;
-    background: #ffd23f;
-    color: #102f52;
-    box-shadow: 0 0 0 3px rgba(16, 47, 82, 0.14), 0 18px 45px rgba(0, 91, 170, 0.18);
-  }
+	  .mobile-native-filter-select.is-active {
+	    border-color: #f0d264;
+	    background: #ffd23f;
+	    color: #102f52;
+	    box-shadow: none;
+	  }
 
   .mobile-native-filter-select svg {
     height: 1.25rem;
