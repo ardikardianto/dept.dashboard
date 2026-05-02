@@ -1027,6 +1027,8 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const [plottingMode, setPlottingMode] = useState("course");
   const [query, setQuery] = useState("");
   const [lecturerSort, setLecturerSort] = useState("Default");
+  const [lecturerHeaderSort, setLecturerHeaderSort] = useState("name");
+  const [lecturerHeaderSortDirection, setLecturerHeaderSortDirection] = useState("asc");
   const [lecturerPlottedFilter, setLecturerPlottedFilter] = useState("All");
   const [importMessage, setImportMessage] = useState("");
   const [selectedCourseCode, setSelectedCourseCode] = useState("");
@@ -1037,7 +1039,17 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const plannedTotal = courses.reduce((sum, course) => sum + (classCounts[course.code] || 0), 0);
   const assignedTotal = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter(Boolean).length, 0);
   const visibleCourses = courses.filter((course) => includes(course.code, query) || includes(course.title, query)).sort((a, b) => a.code.localeCompare(b.code));
+  const sortLecturerHeader = (value) => {
+    setLecturerHeaderSortDirection((current) => lecturerHeaderSort === value ? current === "asc" ? "desc" : "asc" : "asc");
+    setLecturerHeaderSort(value);
+    setLecturerSort("Default");
+  };
+  const lecturerSortHeader = (label, value) => <button type="button" onClick={() => sortLecturerHeader(value)} className="inline-flex items-center gap-1 font-medium uppercase tracking-[0.15em] text-[#6d7d86] hover:text-[#005baa]">{label}{lecturerHeaderSort === value && <span>{lecturerHeaderSortDirection === "asc" ? "↑" : "↓"}</span>}</button>;
   const visibleLecturers = lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.degree, lecturer.expertise.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => lecturerPlottedFilter === "All" || String(lecturer.plotted.length) === lecturerPlottedFilter).sort((a, b) => {
+    if (lecturerSort === "Default" && lecturerHeaderSort) {
+      const result = String(a[lecturerHeaderSort] ?? "").localeCompare(String(b[lecturerHeaderSort] ?? ""));
+      return lecturerHeaderSortDirection === "asc" ? result : -result;
+    }
     if (lecturerSort === "Not plotted first") {
       return Number(a.plotted.length > 0) - Number(b.plotted.length > 0) || a.name.localeCompare(b.name);
     }
@@ -1293,9 +1305,9 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
               <table className="w-full min-w-[980px] text-left text-sm">
                 <thead className="bg-[#f7fbf6] text-[10px] uppercase tracking-[0.15em] text-[#6d7d86]">
                   <tr>
-                    <th className="px-4 py-4 font-medium">ID</th>
-                    <th className="px-4 py-4 font-medium">Degree</th>
-                    <th className="px-4 py-4 font-medium">Full Name</th>
+                    <th className="px-4 py-4">{lecturerSortHeader("ID", "id")}</th>
+                    <th className="px-4 py-4">{lecturerSortHeader("Degree", "degree")}</th>
+                    <th className="px-4 py-4">{lecturerSortHeader("Full Name", "name")}</th>
                     <th className="px-4 py-4 font-medium">#Plotted</th>
                     <th className="px-4 py-4 font-medium">Available</th>
                     <th className="px-4 py-4 font-medium">Expertise</th>
