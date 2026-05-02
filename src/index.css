@@ -213,11 +213,11 @@ html {
 	    inset: 0;
 	    z-index: 60;
 	    display: flex;
-	    align-items: flex-end;
+	    align-items: flex-start;
 	    justify-content: center;
 	    background: rgba(12, 23, 36, 0.24);
 	    padding: 1rem;
-	    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+	    padding-top: calc(1rem + env(safe-area-inset-top));
 	    backdrop-filter: blur(4px);
 	  }
 
@@ -336,7 +336,7 @@ html {
 	  @keyframes mobileSearchCardOpen {
 	    0% {
 	      opacity: 0;
-	      transform: translate3d(0, 0.75rem, 0) scale(0.98);
+	      transform: translate3d(0, -0.75rem, 0) scale(0.98);
 	    }
 
 	    100% {
