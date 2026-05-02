@@ -258,6 +258,20 @@ function normalizeLecturer(row) {
   };
 }
 
+function mergeImportedLecturer(existing = {}, imported = {}) {
+  return normalizeLecturer({
+    ...existing,
+    id: imported.id || existing.id,
+    degree: imported.degree || existing.degree,
+    name: imported.name || existing.name,
+    email: imported.email || existing.email,
+    phone: imported.phone || existing.phone,
+    expertise: imported.expertise?.length ? imported.expertise : existing.expertise,
+    plotted: imported.plotted?.length ? imported.plotted : existing.plotted,
+    available: existing.available ?? imported.available,
+  });
+}
+
 function normalizeTermPlotting(row) {
   return {
     id: row.id || termPlottingId(row.term_code, row.lecturer_id),
@@ -366,11 +380,14 @@ function runTests() {
   console.assert(scopedLecturers[1].plotted.length === 0, "Missing term plotting should stay empty for a new term");
   console.assert(availabilityTone(0) === "red", "0 available should be red");
   console.assert(availabilityTone(1) === "orange", "1 available should be orange");
-  console.assert(availabilityTone(2) === "amber", "2 available should be yellow/amber");
-  console.assert(availabilityTone(3) === "blue", "3 available should be blue");
-  console.assert(availabilityTone(4) === "green", "4 available should be green");
-  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
-}
+	  console.assert(availabilityTone(2) === "amber", "2 available should be yellow/amber");
+	  console.assert(availabilityTone(3) === "blue", "3 available should be blue");
+	  console.assert(availabilityTone(4) === "green", "4 available should be green");
+	  const mergedLecturerImport = mergeImportedLecturer(testLecturers[0], { id: "LECT001", email: "new@example.com", phone: "08123456789", plotted: [], available: 0 });
+	  console.assert(mergedLecturerImport.email === "new@example.com" && mergedLecturerImport.phone === "08123456789", "Lecturer import should update completed profile fields");
+	  console.assert(mergedLecturerImport.plotted.includes("COURSE101") && mergedLecturerImport.available === 1, "Lecturer import should preserve existing plotting data");
+	  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
+	}
 runTests();
 
 function downloadBlob(filename, content, type) {
@@ -957,13 +974,17 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setTermLecturers((prev) => prev.some((lecturer) => lecturer.id === item.id) ? prev.map((lecturer) => lecturer.id === item.id ? { ...lecturer, ...item, available: availableSlots, plotted: lecturer.plotted } : lecturer) : [{ ...item, available: availableSlots, plotted: [] }, ...prev]);
     setModal(null);
   };
-  const importRows = async (items) => {
-    if (!selectedTermCode) throw new Error("Create or select a term before importing lecturer data.");
-    const directoryRows = items.map((item) => {
-      const existing = directoryById.get(item.id);
-      return normalizeLecturer({ ...existing, ...item, plotted: existing?.plotted || [], available: existing?.available ?? item.available });
-    });
-    const plottingRows = items.map((item) => normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, item)));
+	  const importRows = async (items) => {
+	    if (!selectedTermCode) throw new Error("Create or select a term before importing lecturer data.");
+	    const scopedById = new Map(lecturers.map((lecturer) => [lecturer.id, lecturer]));
+	    const directoryRows = items.map((item) => {
+	      const existing = directoryById.get(item.id);
+	      return mergeImportedLecturer(existing, item);
+	    });
+	    const plottingRows = items.map((item) => {
+	      const existing = scopedById.get(item.id);
+	      return normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, { ...item, plotted: existing?.plotted || item.plotted || [], available: existing?.available ?? item.available }));
+	    });
     if (USE_SUPABASE) {
       await upsertRows("lecturers", directoryRows, "id");
       await upsertRows("term_plottings", plottingRows, "id");
@@ -973,11 +994,11 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
       directoryRows.forEach((item) => byId.set(item.id, item));
       return Array.from(byId.values());
     });
-    setTermLecturers((prev) => {
-      const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
-      items.forEach((item) => byId.set(item.id, { ...(byId.get(item.id) || item), ...item }));
-      return Array.from(byId.values());
-    });
+	    setTermLecturers((prev) => {
+	      const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
+	      items.forEach((item) => byId.set(item.id, mergeImportedLecturer(byId.get(item.id), item)));
+	      return Array.from(byId.values());
+	    });
   };
   const handleImport = async (event) => {
     const file = event.target.files?.[0];
