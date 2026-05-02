@@ -213,14 +213,15 @@ function mapImportedPlottingRows(rows, lecturers, courses) {
   const counts = {};
   const ignored = { courses: new Set(), lecturers: new Set() };
 
-  rows.filter((row) => !isImportRowBlank(row)).forEach((row) => {
-    const className = String(getImportedValue(row, ["Kelas", "Class"])).trim();
-    const courseName = String(getImportedValue(row, ["Nama MK", "Course Name", "Course"])).trim();
-    const importedLecturerId = String(getImportedValue(row, ["Idtutor", "Lecturer_ID", "Lecturer ID", "ID"])).trim();
-    const lecturerName = String(getImportedValue(row, ["Nama", "Name", "Full Name"])).trim();
-    const lecturerId = lecturerIds.has(importedLecturerId) ? importedLecturerId : lecturersByName.get(lecturerName.toLowerCase())?.id || importedLecturerId;
-    const courseCode = getCourseCodeFromClass(className);
-    const course = coursesByCode.get(courseCode) || coursesByTitle.get(courseName.toLowerCase());
+	  rows.filter((row) => !isImportRowBlank(row)).forEach((row) => {
+	    const className = String(getImportedValue(row, ["Kelas", "Class"])).trim();
+	    const importedCourseCode = String(getImportedValue(row, ["Course_Code", "Course Code", "CourseCode", "Code", "Course"])).trim();
+	    const courseName = String(getImportedValue(row, ["Nama MK", "Course Name", "Course Title", "Course"])).trim();
+	    const importedLecturerId = String(getImportedValue(row, ["Idtutor", "Lecturer_ID", "Lecturer ID", "ID"])).trim();
+	    const lecturerName = String(getImportedValue(row, ["Nama", "Name", "Full Name"])).trim();
+	    const lecturerId = lecturerIds.has(importedLecturerId) ? importedLecturerId : lecturersByName.get(lecturerName.toLowerCase())?.id || importedLecturerId;
+	    const courseCode = getCourseCodeFromClass(className) || importedCourseCode;
+	    const course = coursesByCode.get(courseCode) || coursesByCode.get(courseName) || coursesByTitle.get(courseName.toLowerCase());
     if (!course) {
       ignored.courses.add(courseCode || courseName || "blank course");
       return;
@@ -353,9 +354,11 @@ function runTests() {
   console.assert(plottingRows.length === 4, "Plotting export should include planned classes and existing assignments");
   console.assert(plottingRows[0].Idtutor === "LECT001" && plottingRows[0].Kelas === "COURSE101.1" && plottingRows[0]["Nama MK"] === "Basic Reading", "Plotting export should match the Excel plotting schema");
   console.assert(plottingRows[2].Idtutor === "", "Unassigned planned classes should export as blank lecturer cells");
-  const importedPlotting = mapImportedPlottingRows([{ Idtutor: "LECT002", Nama: "Second Lecturer", Kelas: "COURSE102.1", "Nama MK": "Academic Writing" }], testLecturers, testCourses);
-  console.assert(importedPlotting.counts.COURSE102 === 1, "Plotting import should set class count from Kelas");
-  console.assert(importedPlotting.assignments.COURSE102[0] === "LECT002", "Plotting import should map lecturer ID to class");
+	  const importedPlotting = mapImportedPlottingRows([{ Idtutor: "LECT002", Nama: "Second Lecturer", Kelas: "COURSE102.1", "Nama MK": "Academic Writing" }], testLecturers, testCourses);
+	  console.assert(importedPlotting.counts.COURSE102 === 1, "Plotting import should set class count from Kelas");
+	  console.assert(importedPlotting.assignments.COURSE102[0] === "LECT002", "Plotting import should map lecturer ID to class");
+	  const simpleImportedPlotting = mapImportedPlottingRows([{ ID: "LECT001", Course_Code: "COURSE101" }], testLecturers, testCourses);
+	  console.assert(simpleImportedPlotting.assignments.COURSE101[0] === "LECT001", "Plotting import should support ID and Course_Code only");
   const limitedAssignments = limitAssignmentMapByLecturer({ COURSE101: ["LECT001", "LECT001", "LECT001"], COURSE102: ["LECT001", "LECT001"] });
   console.assert(countLecturerAssignments(limitedAssignments, "LECT001") === LECTURER_CLASS_LIMIT, "Lecturer assignments should be capped at four classes");
   const scopedLecturers = getTermScopedLecturers(testLecturers, [buildTermPlottingRow("TERM002", { ...testLecturers[0], plotted: ["COURSE102"], available: 3 })], "TERM002");
@@ -1132,7 +1135,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
       const rawRows = file.name.toLowerCase().endsWith(".csv") ? rowsToObjects(parseCSV(await file.text())) : await parseXLSX(file);
       const imported = mapImportedPlottingRows(rawRows, lecturers, courses);
       const importedClassCount = Object.values(imported.counts).reduce((sum, count) => sum + count, 0);
-      if (!importedClassCount) throw new Error("No valid plotting rows found. Use columns Idtutor, Nama, Kelas, and Nama MK.");
+	      if (!importedClassCount) throw new Error("No valid plotting rows found. Use either ID + Course_Code, or columns Idtutor, Nama, Kelas, and Nama MK.");
       const nextAssignmentMap = mergeAssignmentMapWithLecturerLimit(assignmentMap, imported.assignments);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
