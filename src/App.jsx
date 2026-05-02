@@ -38,6 +38,8 @@ const nav = [
   { id: "terms", label: "Terms", icon: Icons.calendar },
 ];
 const dashboardPalette = ["#005baa", "#ffd23f", "#3d8bd6", "#f4b000", "#8fbbe8"];
+const DEFAULT_DEGREE_OPTIONS = ["S.S.", "M.A.", "M.Hum.", "Ph.D.", "Dr."];
+const DEFAULT_EXPERTISE_OPTIONS = ["Reading", "Writing", "Speaking", "Listening", "Grammar", "Literature", "Linguistics", "Translation", "TESOL", "Research Methodology"];
 
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 const includes = (value, query) => String(value || "").toLowerCase().includes(String(query || "").toLowerCase());
@@ -822,6 +824,24 @@ function PlainInput({ label, value = "", onChange, placeholder, type = "text" })
   return <label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} className="w-full rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]" /></label>;
 }
 
+function PlainSelect({ label, value = "", onChange, options = [] }) {
+  const items = uniq([...options, value]);
+  return <label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 pr-9 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]">{items.map((option) => <option key={option} value={option}>{option}</option>)}</select><Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6f90af]" /></div></label>;
+}
+
+function ExpertiseSelect({ label, value = [], onChange, options = [] }) {
+  const selected = Array.isArray(value) ? value : splitList(value);
+  const [baseOptions] = useState(() => uniq([...options, ...selected]));
+  const available = uniq([...baseOptions, ...options, ...selected]);
+  const remaining = available.filter((option) => !selected.includes(option));
+  const addExpertise = (item) => {
+    if (!item) return;
+    onChange(uniq([...selected, item]));
+  };
+  const removeExpertise = (item) => onChange(selected.filter((option) => option !== item));
+  return <div className="space-y-2"><label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><div className="relative"><select value="" onChange={(event) => addExpertise(event.target.value)} className="w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 pr-9 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]"><option value="" disabled>{remaining.length ? "Select expertise" : "All expertise selected"}</option>{remaining.map((option) => <option key={option} value={option}>{option}</option>)}</select><Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6f90af]" /></div></label><div className="flex min-h-9 flex-wrap gap-2">{selected.length ? selected.map((item) => <button key={item} type="button" onClick={() => removeExpertise(item)} className="inline-flex items-center gap-1 rounded-lg border border-[#c7dbf2] bg-[#dcecff] px-2 py-1 text-xs font-normal text-[#315577]">{item}<Icons.x className="h-3 w-3" /></button>) : <span className="text-xs text-[#8aa0b6]">No expertise selected</span>}</div></div>;
+}
+
 function FormGrid({ children }) {
   return <div className="grid gap-3 sm:grid-cols-2">{children}</div>;
 }
@@ -881,13 +901,15 @@ function Dashboard({ lecturers, courses }) {
   return <div className="space-y-6"><Card className="dashboard-filter-card p-5"><p className="mb-4 text-xs font-medium uppercase tracking-[0.2em] text-[#005baa]">Filter Infographics</p>{filterControls}</Card><div className={`mobile-filter-fab ${mobileFiltersVisible ? "is-visible" : "is-hidden"} ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle filter infographics"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat label="Total Lecturers" value={filtered.length} icon={Icons.users} /><Stat label="Total Plotted Courses" value={filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0)} icon={Icons.book} note="Filtered result" /><Stat label="Total Available Slots" value={filtered.reduce((sum, lecturer) => sum + lecturer.available, 0)} icon={Icons.chart} /><Stat label="Avg. Plotted Course / Lecturer" value={filtered.length ? (filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0) / filtered.length).toFixed(1) : "0"} icon={Icons.check} tone="amber" note="Range 0–4" /></div><div className="grid gap-6 md:grid-cols-2"><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Academic Degree</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={degreeData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{degreeData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Number of Plotted Courses</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={plottedCountData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{plottedCountData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5 md:col-span-2"><h3 className="font-medium text-[#102f52]">By Course Expertise</h3><div className="h-72"><ResponsiveContainer><BarChart data={expertiseData} layout="vertical"><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis type="number" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis dataKey="name" type="category" width={155} tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Bar dataKey="value" fill="#005baa" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div></Card></div><Card className="p-5"><h3 className="font-medium text-[#102f52]">Lecturer Load and Availability</h3><div className="h-80"><ResponsiveContainer><BarChart data={availableData}><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /><Bar dataKey="plotted" fill="#005baa" radius={[8, 8, 0, 0]} /><Bar dataKey="available" fill="#ffd23f" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></div></Card></div>;
 }
 
-function LecturerForm({ initial, onSave, onClose }) {
-  const [form, setForm] = useState(() => initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", expertiseText: "", plotted: [], available: 0 });
+function LecturerForm({ initial, onSave, onClose, degreeOptions = DEFAULT_DEGREE_OPTIONS, expertiseOptions = DEFAULT_EXPERTISE_OPTIONS }) {
+  const [form, setForm] = useState(() => {
+    const base = initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", plotted: [], available: 0 };
+    return { ...base, expertise: Array.isArray(base.expertise) ? base.expertise : splitList(base.expertiseText) };
+  });
   const save = () => {
-    const expertiseText = form.expertiseText ?? form.expertise?.join(", ") ?? "";
-    onSave({ id: form.id, degree: form.degree, name: form.name, email: form.email, phone: form.phone, available: Number(form.available ?? 0), expertise: uniq(expertiseText.split(",").map((item) => item.trim())), plotted: Array.isArray(form.plotted) ? form.plotted : [] });
+    onSave({ id: form.id, degree: form.degree, name: form.name, email: form.email, phone: form.phone, available: Number(form.available ?? 0), expertise: uniq(form.expertise), plotted: Array.isArray(form.plotted) ? form.plotted : [] });
   };
-  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainInput label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><PlainInput label="Expertise, separated by comma" value={form.expertiseText ?? form.expertise?.join(", ") ?? ""} onChange={(value) => setForm({ ...form, expertiseText: value })} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.id}>Save lecturer</Button></div></div>;
+  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainSelect label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} options={degreeOptions} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><ExpertiseSelect label="Expertise" value={form.expertise} onChange={(value) => setForm({ ...form, expertise: value })} options={expertiseOptions} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.id}>Save lecturer</Button></div></div>;
 }
 
 function LecturerInfoCard({ lecturer, courses }) {
