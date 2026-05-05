@@ -1039,6 +1039,11 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
     event.preventDefault();
     setSubmittedId(idInput);
   };
+  const refreshPublicDirectory = async () => {
+    setIdInput("");
+    setSubmittedId("");
+    await onRefresh?.();
+  };
 
   return (
     <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
@@ -1060,7 +1065,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
           </button>
           <div className="flex flex-wrap items-center gap-2 rounded-full bg-[#eef5ff] p-1 text-sm font-black">
             <SupabaseStatusIcon connected={isHydrated} label={dbStatus} />
-            <button type="button" onClick={onRefresh} disabled={!USE_SUPABASE} className="rounded-full px-4 py-2 text-[#315577] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-5">Refresh</button>
+            <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-full px-4 py-2 text-[#315577] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-5">Refresh</button>
             <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">Public Mode</button>
             <button type="button" onClick={onLogin} className="rounded-full px-5 py-2 text-[#315577] hover:bg-white sm:px-6">Login Mode</button>
           </div>
