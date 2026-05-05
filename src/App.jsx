@@ -935,7 +935,7 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
           </div>
         </motion.nav>
 
-        <main className="grid flex-1 items-center gap-10 py-12 lg:grid-cols-[1fr_0.85fr] lg:py-16">
+        <main className="relative mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-16">
           <motion.section
             initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
@@ -1033,7 +1033,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
           </div>
         </motion.nav>
 
-        <main className="mx-auto grid max-w-6xl gap-8 py-10 lg:grid-cols-[0.75fr_1.25fr] lg:py-14">
+        <main className="relative mx-auto grid w-full max-w-6xl gap-8 py-10 lg:grid-cols-[0.95fr_1.05fr] lg:py-14">
           <section>
             <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Profile</p>
             <h1 className="mt-3 text-4xl font-black tracking-tight text-[#102f52] sm:text-5xl">Find tutor by ID</h1>
