@@ -52,16 +52,6 @@ const findLecturerById = (lecturers, id) => {
   if (!normalizedId) return null;
   return lecturers.find((lecturer) => lookupKey(lecturer.id) === normalizedId || compactLookupKey(lecturer.id) === compactId) || null;
 };
-const getLecturerSearchMatches = (lecturers, query) => {
-  const normalizedQuery = lookupKey(query);
-  const compactQuery = compactLookupKey(query);
-  if (!normalizedQuery) return [];
-  return lecturers.filter((lecturer) => {
-    const lecturerId = lookupKey(lecturer.id);
-    const compactId = compactLookupKey(lecturer.id);
-    return lecturerId.includes(normalizedQuery) || compactId.includes(compactQuery) || lookupKey(lecturer.name).includes(normalizedQuery);
-  });
-};
 const courseTitleByCode = (courses, code) => courses.find((course) => course.code === code)?.title || code;
 const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) => courseTitleByCode(courses, code));
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
@@ -370,7 +360,6 @@ function runTests() {
   console.assert(testLecturers.length > 0, "Lecturers should not be empty");
   console.assert(testTerms.filter((term) => term.active).length === 1, "Exactly one term should be active");
   console.assert(findLecturerById(testLecturers, " lect001 ")?.name === "Test Lecturer", "Public lookup should find a lecturer by ID");
-  console.assert(getLecturerSearchMatches(testLecturers, "second").length === 1, "Public lookup should suggest matching lecturer profiles");
   const courseCodes = new Set(testCourses.map((course) => course.code));
   const missingCodes = testLecturers.flatMap((lecturer) => lecturer.plotted.filter((code) => !courseCodes.has(code)));
   console.assert(missingCodes.length === 0, `Missing course codes: ${missingCodes.join(", ")}`);
@@ -929,7 +918,7 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
           initial={{ opacity: 0, y: -18, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="flex min-h-20 w-full flex-wrap items-center justify-between gap-4 border-b border-[#d7e6f7] px-1 py-4 sm:px-2"
+          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
         >
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
@@ -940,9 +929,9 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
               <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#d7e6f7] bg-[#f7fbff] p-1">
-            <button type="button" onClick={onPublicMode} className="rounded-full bg-[#ffd23f] px-4 py-2 text-sm font-black text-[#102f52] shadow-sm">Public Mode</button>
-            <button type="button" onClick={onLoginMode} className="rounded-full px-4 py-2 text-sm font-black text-[#315577] hover:bg-white">Login Mode</button>
+          <div className="flex items-center rounded-full bg-[#eef5ff] p-1 text-sm font-black">
+            <button type="button" onClick={onPublicMode} className="rounded-full bg-[#ffd23f] px-4 py-2 text-[#102f52] shadow-sm sm:px-5">Public Mode</button>
+            <button type="button" onClick={onLoginMode} className="rounded-full px-5 py-2 text-[#315577] hover:bg-white sm:px-6">Login Mode</button>
           </div>
         </motion.nav>
 
@@ -1009,9 +998,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
     return termPlottings.filter((row) => lecturerIds.has(row.lecturer_id));
   }, [lecturers, termPlottings]);
   const termScopedLecturers = useMemo(() => getTermScopedLecturers(lecturers, validTermPlottings, effectiveTermCode), [lecturers, validTermPlottings, effectiveTermCode]);
-  const liveMatches = useMemo(() => getLecturerSearchMatches(termScopedLecturers, idInput).slice(0, 6), [termScopedLecturers, idInput]);
-  const submittedMatches = useMemo(() => getLecturerSearchMatches(termScopedLecturers, submittedId), [termScopedLecturers, submittedId]);
-  const lecturer = findLecturerById(termScopedLecturers, submittedId) || (submittedMatches.length === 1 ? submittedMatches[0] : null);
+  const lecturer = findLecturerById(termScopedLecturers, submittedId);
   const submitted = Boolean(submittedId.trim());
   const publicDirectoryEmpty = USE_SUPABASE && isHydrated && lecturers.length === 0;
   const termSelectValue = terms.some((term) => term.code === effectiveTermCode) ? effectiveTermCode : "";
@@ -1019,32 +1006,34 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
     event.preventDefault();
     setSubmittedId(idInput);
   };
-  const showProfile = (lecturerId) => {
-    setIdInput(lecturerId);
-    setSubmittedId(lecturerId);
-  };
 
   return (
     <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
-      <div className="mx-auto max-w-6xl">
-        <nav className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#d7e6f7] px-1 py-4 sm:px-2">
+      <div className="mx-auto max-w-7xl">
+        <motion.nav
+          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
+        >
           <button type="button" onClick={onBack} className="flex items-center gap-3 text-left">
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
               <Icons.graduation className="h-6 w-6" />
             </span>
             <div>
-              <p className="text-xl font-black tracking-tight sm:text-2xl">Public Mode</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">Tutor Profile Lookup</p>
+              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
             </div>
           </button>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-full bg-[#eef5ff] p-1 text-sm font-black">
             <SupabaseStatusIcon connected={isHydrated} label={dbStatus} />
-            <Button variant="secondary" onClick={onRefresh} disabled={!USE_SUPABASE}>Refresh</Button>
-            <Button onClick={onLogin}><Icons.dashboard className="h-4 w-4" />Login Mode</Button>
+            <button type="button" onClick={onRefresh} disabled={!USE_SUPABASE} className="rounded-full px-4 py-2 text-[#315577] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-5">Refresh</button>
+            <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">Public Mode</button>
+            <button type="button" onClick={onLogin} className="rounded-full px-5 py-2 text-[#315577] hover:bg-white sm:px-6">Login Mode</button>
           </div>
-        </nav>
+        </motion.nav>
 
-        <main className="grid gap-8 py-10 lg:grid-cols-[0.75fr_1.25fr] lg:py-14">
+        <main className="mx-auto grid max-w-6xl gap-8 py-10 lg:grid-cols-[0.75fr_1.25fr] lg:py-14">
           <section>
             <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Profile</p>
             <h1 className="mt-3 text-4xl font-black tracking-tight text-[#102f52] sm:text-5xl">Find tutor by ID</h1>
@@ -1065,20 +1054,6 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
             </form>
             {isHydrated && !publicDirectoryEmpty && (
               <p className="mt-4 text-sm leading-6 text-[#4f6478]">{termScopedLecturers.length} public {termScopedLecturers.length === 1 ? "profile" : "profiles"} loaded{effectiveTermCode ? " for the selected term" : ""}.</p>
-            )}
-            {isHydrated && !publicDirectoryEmpty && idInput.trim() && liveMatches.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">Matches</p>
-                {liveMatches.map((match) => (
-                  <button key={match.id} type="button" onClick={() => showProfile(match.id)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 text-left text-sm transition hover:border-[#9bbfe8] hover:bg-[#f7fbff]">
-                    <span className="min-w-0">
-                      <span className="block truncate font-black text-[#102f52]">{match.name || "Unnamed tutor"}</span>
-                      <span className="block truncate text-xs text-[#4f6478]">ID {match.id}</span>
-                    </span>
-                    <Icons.eye className="h-4 w-4 shrink-0 text-[#005baa]" />
-                  </button>
-                ))}
-              </div>
             )}
           </section>
 
@@ -1107,26 +1082,10 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
                 <p className="mt-2 text-sm leading-6 text-[#4f6478]">The public lookup can reach Supabase, but the public_lecturer_profiles view returned zero rows. Run the public profile views SQL, or sign in through Login Mode to confirm lecturer data exists.</p>
               </Card>
             )}
-            {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && submittedMatches.length > 1 && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">Choose a matching profile</p>
-                <div className="mt-4 grid gap-2">
-                  {submittedMatches.slice(0, 8).map((match) => (
-                    <button key={match.id} type="button" onClick={() => showProfile(match.id)} className="flex items-center justify-between gap-3 rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 text-left text-sm transition hover:border-[#9bbfe8] hover:bg-[#f7fbff]">
-                      <span>
-                        <span className="block font-black text-[#102f52]">{match.name || "Unnamed tutor"}</span>
-                        <span className="block text-xs text-[#4f6478]">ID {match.id}</span>
-                      </span>
-                      <Icons.eye className="h-4 w-4 text-[#005baa]" />
-                    </button>
-                  ))}
-                </div>
-              </Card>
-            )}
-            {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && submittedMatches.length <= 1 && (
+            {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && (
               <Card className="p-6">
                 <p className="font-black text-[#102f52]">No profile found</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">No tutor profile matches ID {submittedId.trim()}. Try the ID without spaces or punctuation, or search by part of the tutor name.</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">No tutor profile matches that ID. Check the full tutor ID and try again.</p>
               </Card>
             )}
             {USE_SUPABASE && isHydrated && lecturer && <LecturerInfoCard lecturer={lecturer} courses={courses} />}
