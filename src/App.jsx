@@ -44,6 +44,24 @@ let lecturerFormExpertiseOptions = DEFAULT_EXPERTISE_OPTIONS;
 
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 const includes = (value, query) => String(value || "").toLowerCase().includes(String(query || "").toLowerCase());
+const lookupKey = (value) => String(value || "").trim().toLowerCase();
+const compactLookupKey = (value) => lookupKey(value).replace(/[\s_-]+/g, "");
+const findLecturerById = (lecturers, id) => {
+  const normalizedId = lookupKey(id);
+  const compactId = compactLookupKey(id);
+  if (!normalizedId) return null;
+  return lecturers.find((lecturer) => lookupKey(lecturer.id) === normalizedId || compactLookupKey(lecturer.id) === compactId) || null;
+};
+const getLecturerSearchMatches = (lecturers, query) => {
+  const normalizedQuery = lookupKey(query);
+  const compactQuery = compactLookupKey(query);
+  if (!normalizedQuery) return [];
+  return lecturers.filter((lecturer) => {
+    const lecturerId = lookupKey(lecturer.id);
+    const compactId = compactLookupKey(lecturer.id);
+    return lecturerId.includes(normalizedQuery) || compactId.includes(compactQuery) || lookupKey(lecturer.name).includes(normalizedQuery);
+  });
+};
 const courseTitleByCode = (courses, code) => courses.find((course) => course.code === code)?.title || code;
 const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) => courseTitleByCode(courses, code));
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
@@ -351,6 +369,8 @@ function runTests() {
   console.assert(testCourses.length > 0, "Courses should not be empty");
   console.assert(testLecturers.length > 0, "Lecturers should not be empty");
   console.assert(testTerms.filter((term) => term.active).length === 1, "Exactly one term should be active");
+  console.assert(findLecturerById(testLecturers, " lect001 ")?.name === "Test Lecturer", "Public lookup should find a lecturer by ID");
+  console.assert(getLecturerSearchMatches(testLecturers, "second").length === 1, "Public lookup should suggest matching lecturer profiles");
   const courseCodes = new Set(testCourses.map((course) => course.code));
   const missingCodes = testLecturers.flatMap((lecturer) => lecturer.plotted.filter((code) => !courseCodes.has(code)));
   console.assert(missingCodes.length === 0, `Missing course codes: ${missingCodes.join(", ")}`);
@@ -737,6 +757,36 @@ async function fetchTable(table, orderBy) {
   });
 }
 
+async function fetchDatabaseSnapshot() {
+  const [lecturerRows, courseRows, termRows, plottingRows] = await Promise.all([
+    fetchTable("lecturers", "name"),
+    fetchTable("courses", "code"),
+    fetchTable("academic_terms", "code"),
+    fetchTable("term_plottings", "id"),
+  ]);
+  return {
+    lecturers: Array.isArray(lecturerRows) ? lecturerRows.map(normalizeLecturer) : [],
+    courses: Array.isArray(courseRows) ? courseRows : [],
+    terms: Array.isArray(termRows) ? termRows : [],
+    termPlottings: Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : [],
+  };
+}
+
+async function fetchPublicDatabaseSnapshot() {
+  const [lecturerRows, courseRows, termRows, plottingRows] = await Promise.all([
+    fetchTable("public_lecturer_profiles", "name"),
+    fetchTable("public_courses", "code"),
+    fetchTable("public_academic_terms", "code"),
+    fetchTable("public_term_plottings", "id"),
+  ]);
+  return {
+    lecturers: Array.isArray(lecturerRows) ? lecturerRows.map(normalizeLecturer) : [],
+    courses: Array.isArray(courseRows) ? courseRows : [],
+    terms: Array.isArray(termRows) ? termRows : [],
+    termPlottings: Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : [],
+  };
+}
+
 async function upsertRows(table, rows, conflictKey) {
   if (!rows.length) return [];
   return supabaseRequest(`/rest/v1/${table}?on_conflict=${conflictKey}`, {
@@ -871,6 +921,222 @@ function FloatingBottomNav({ active, setActive, onLogout }) {
   return <nav className="mobile-bottom-nav fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 sm:px-6"><div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto rounded-[1.75rem] border border-[#d7e6f7] bg-white/95 p-2 shadow-[0_18px_60px_rgba(0,91,170,0.14)] backdrop-blur-xl"><div className="hidden shrink-0 items-center gap-3 border-r border-[#d7e6f7] px-3 pr-4 md:flex"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f]"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black text-[#102f52]">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#005baa]">{department.subtitle}</p></div></div>{nav.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} title={item.label} onClick={() => setActive(item.id)} className={`flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm ${selected ? "bg-[#ffd23f] text-[#102f52] shadow-sm" : "text-[#315577] hover:bg-[#eef5ff] hover:text-[#005baa]"}`}><Icon className="h-5 w-5" /><span>{item.label}</span></button>; })}<button title="Logout" onClick={onLogout} className="ml-auto flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d7e6f7] px-3 py-2 text-[11px] font-black text-[#315577] transition hover:bg-[#eef5ff] hover:text-[#005baa] sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm"><Icons.logout className="h-5 w-5" /><span>Logout</span></button></div></nav>;
 }
 
+function LandingScreen({ onPublicMode, onLoginMode }) {
+  return (
+    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
+      <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
+        <motion.nav
+          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          className="flex min-h-20 w-full flex-wrap items-center justify-between gap-4 border-b border-[#d7e6f7] px-1 py-4 sm:px-2"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
+              <Icons.graduation className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-[#d7e6f7] bg-[#f7fbff] p-1">
+            <button type="button" onClick={onPublicMode} className="rounded-full bg-[#ffd23f] px-4 py-2 text-sm font-black text-[#102f52] shadow-sm">Public Mode</button>
+            <button type="button" onClick={onLoginMode} className="rounded-full px-4 py-2 text-sm font-black text-[#315577] hover:bg-white">Login Mode</button>
+          </div>
+        </motion.nav>
+
+        <main className="grid flex-1 items-center gap-10 py-12 lg:grid-cols-[1fr_0.85fr] lg:py-16">
+          <motion.section
+            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-3xl"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Portal</p>
+            <h1 className="mt-4 text-5xl font-black leading-[0.96] tracking-tight text-[#102f52] sm:text-6xl lg:text-7xl">
+              UT English Dept.
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4f6478]">
+              Tutors can view their current profile by ID, while administrators can sign in to manage the department dashboard.
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Button onClick={onPublicMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.eye className="h-5 w-5" />Public Mode</Button>
+              <Button variant="secondary" onClick={onLoginMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.dashboard className="h-5 w-5" />Login Mode</Button>
+            </div>
+          </motion.section>
+
+          <motion.section
+            initial={{ opacity: 0, y: 28, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.72, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="rounded-[2rem] border border-[#d7e6f7] bg-[#f7fbff] p-5 shadow-[0_28px_90px_rgba(0,91,170,0.10)] sm:p-7"
+          >
+            <div className="grid gap-4">
+              <div className="rounded-2xl bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-xl bg-[#eef5ff] p-3 text-[#005baa]"><Icons.search /></span>
+                  <div>
+                    <p className="font-black text-[#102f52]">Public Mode</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4f6478]">Tutor ID profile lookup</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-xl bg-[#fff0c2] p-3 text-[#71540f]"><Icons.dashboard /></span>
+                  <div>
+                    <p className="font-black text-[#102f52]">Login Mode</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4f6478]">Admin dashboard access</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selectedTermCode, setSelectedTermCode, dbStatus, isHydrated, onBack, onLogin, onRefresh }) {
+  const [idInput, setIdInput] = useState("");
+  const [submittedId, setSubmittedId] = useState("");
+  const activeTermCode = terms.find((term) => term.active)?.code || "";
+  const effectiveTermCode = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : activeTermCode || terms[0]?.code || "";
+  const validTermPlottings = useMemo(() => {
+    const lecturerIds = new Set(lecturers.map((lecturer) => lecturer.id));
+    return termPlottings.filter((row) => lecturerIds.has(row.lecturer_id));
+  }, [lecturers, termPlottings]);
+  const termScopedLecturers = useMemo(() => getTermScopedLecturers(lecturers, validTermPlottings, effectiveTermCode), [lecturers, validTermPlottings, effectiveTermCode]);
+  const liveMatches = useMemo(() => getLecturerSearchMatches(termScopedLecturers, idInput).slice(0, 6), [termScopedLecturers, idInput]);
+  const submittedMatches = useMemo(() => getLecturerSearchMatches(termScopedLecturers, submittedId), [termScopedLecturers, submittedId]);
+  const lecturer = findLecturerById(termScopedLecturers, submittedId) || (submittedMatches.length === 1 ? submittedMatches[0] : null);
+  const submitted = Boolean(submittedId.trim());
+  const publicDirectoryEmpty = USE_SUPABASE && isHydrated && lecturers.length === 0;
+  const termSelectValue = terms.some((term) => term.code === effectiveTermCode) ? effectiveTermCode : "";
+  const submit = (event) => {
+    event.preventDefault();
+    setSubmittedId(idInput);
+  };
+  const showProfile = (lecturerId) => {
+    setIdInput(lecturerId);
+    setSubmittedId(lecturerId);
+  };
+
+  return (
+    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-6xl">
+        <nav className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[#d7e6f7] px-1 py-4 sm:px-2">
+          <button type="button" onClick={onBack} className="flex items-center gap-3 text-left">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
+              <Icons.graduation className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="text-xl font-black tracking-tight sm:text-2xl">Public Mode</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">Tutor Profile Lookup</p>
+            </div>
+          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <SupabaseStatusIcon connected={isHydrated} label={dbStatus} />
+            <Button variant="secondary" onClick={onRefresh} disabled={!USE_SUPABASE}>Refresh</Button>
+            <Button onClick={onLogin}><Icons.dashboard className="h-4 w-4" />Login Mode</Button>
+          </div>
+        </nav>
+
+        <main className="grid gap-8 py-10 lg:grid-cols-[0.75fr_1.25fr] lg:py-14">
+          <section>
+            <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Profile</p>
+            <h1 className="mt-3 text-4xl font-black tracking-tight text-[#102f52] sm:text-5xl">Find tutor by ID</h1>
+            <form onSubmit={submit} className="mt-7 space-y-4">
+              <TextInput icon={Icons.search} value={idInput} onChange={setIdInput} placeholder="Enter tutor ID" />
+              {terms.length > 0 && (
+                <label className="block space-y-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">Term</span>
+                  <div className="relative">
+                    <select value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="w-full appearance-none rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 pr-9 text-sm font-normal text-[#102f52] outline-none focus:border-[#005baa]">
+                      {terms.map((term) => <option key={term.code} value={term.code}>{term.name}</option>)}
+                    </select>
+                    <Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6f90af]" />
+                  </div>
+                </label>
+              )}
+              <Button type="submit" className="w-full !rounded-2xl py-3 text-base" disabled={!idInput.trim() || !isHydrated}>View Profile</Button>
+            </form>
+            {isHydrated && !publicDirectoryEmpty && (
+              <p className="mt-4 text-sm leading-6 text-[#4f6478]">{termScopedLecturers.length} public {termScopedLecturers.length === 1 ? "profile" : "profiles"} loaded{effectiveTermCode ? " for the selected term" : ""}.</p>
+            )}
+            {isHydrated && !publicDirectoryEmpty && idInput.trim() && liveMatches.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">Matches</p>
+                {liveMatches.map((match) => (
+                  <button key={match.id} type="button" onClick={() => showProfile(match.id)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 text-left text-sm transition hover:border-[#9bbfe8] hover:bg-[#f7fbff]">
+                    <span className="min-w-0">
+                      <span className="block truncate font-black text-[#102f52]">{match.name || "Unnamed tutor"}</span>
+                      <span className="block truncate text-xs text-[#4f6478]">ID {match.id}</span>
+                    </span>
+                    <Icons.eye className="h-4 w-4 shrink-0 text-[#005baa]" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            {!USE_SUPABASE && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">Supabase is not configured.</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable public profile lookup.</p>
+              </Card>
+            )}
+            {USE_SUPABASE && !isHydrated && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">{dbStatus}</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Profile lookup will be available once the public directory is loaded.</p>
+              </Card>
+            )}
+            {USE_SUPABASE && isHydrated && !submitted && !publicDirectoryEmpty && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">Ready</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Enter a tutor ID to view the matching profile.</p>
+              </Card>
+            )}
+            {publicDirectoryEmpty && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">No public profiles loaded</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">The public lookup can reach Supabase, but the public_lecturer_profiles view returned zero rows. Run the public profile views SQL, or sign in through Login Mode to confirm lecturer data exists.</p>
+              </Card>
+            )}
+            {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && submittedMatches.length > 1 && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">Choose a matching profile</p>
+                <div className="mt-4 grid gap-2">
+                  {submittedMatches.slice(0, 8).map((match) => (
+                    <button key={match.id} type="button" onClick={() => showProfile(match.id)} className="flex items-center justify-between gap-3 rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 text-left text-sm transition hover:border-[#9bbfe8] hover:bg-[#f7fbff]">
+                      <span>
+                        <span className="block font-black text-[#102f52]">{match.name || "Unnamed tutor"}</span>
+                        <span className="block text-xs text-[#4f6478]">ID {match.id}</span>
+                      </span>
+                      <Icons.eye className="h-4 w-4 text-[#005baa]" />
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            )}
+            {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && submittedMatches.length <= 1 && (
+              <Card className="p-6">
+                <p className="font-black text-[#102f52]">No profile found</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f6478]">No tutor profile matches ID {submittedId.trim()}. Try the ID without spaces or punctuation, or search by part of the tutor name.</p>
+              </Card>
+            )}
+            {USE_SUPABASE && isHydrated && lecturer && <LecturerInfoCard lecturer={lecturer} courses={courses} />}
+          </section>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 function Header({ active, terms, selectedTermCode, setSelectedTermCode }) {
   const titles = {
     dashboard: ["Overview", "Department Dashboard", "Live infographics of lecturer distribution, expertise, teaching load, and availability."],
@@ -936,7 +1202,8 @@ function LecturerForm({ initial, onSave, onClose }) {
 }
 
 function LecturerInfoCard({ lecturer, courses }) {
-  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div><div className="grid gap-4 sm:grid-cols-2"><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card></div><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></Card></div>;
+  const hasContact = Boolean(lecturer.email || lecturer.phone);
+  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div>{hasContact && <div className="grid gap-4 sm:grid-cols-2">{lecturer.email && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card>}{lecturer.phone && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card>}</div>}<Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.length ? lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-slate-500">No expertise listed</span>}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.plotted.length ? <PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /> : <span className="text-sm text-slate-500">No plotted courses listed</span>}</div></Card></div>;
 }
 
 function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode }) {
@@ -1435,7 +1702,7 @@ function Terms({ terms, setTerms, onActiveTermChange }) {
   return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid items-end gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-medium text-slate-950">{term.name}</p><p className="text-sm font-normal text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onBack }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -1461,11 +1728,11 @@ function LoginScreen({ onLogin }) {
           </div>
 
           <div className="flex items-center rounded-full bg-[#eef5ff] p-1 text-sm font-black">
-            <button type="button" className="rounded-full px-4 py-2 text-[#315577] sm:px-5">
-              Lecturer Database
+            <button type="button" onClick={onBack} className="rounded-full px-4 py-2 text-[#315577] hover:bg-white sm:px-5">
+              Public Mode
             </button>
             <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">
-              Login
+              Login Mode
             </button>
           </div>
         </motion.nav>
@@ -1546,7 +1813,12 @@ function LoginScreen({ onLogin }) {
 
 export default function App() {
   const [active, setActive] = useState("dashboard");
-  const [userEmail, setUserEmail] = useState(getStoredUserEmail);
+  const [session, setSession] = useState(() => {
+    const initialEmail = getStoredUserEmail();
+    return { userEmail: initialEmail, entryMode: initialEmail ? "admin" : "landing" };
+  });
+  const userEmail = session.userEmail;
+  const entryMode = session.entryMode;
   const [lecturers, setLecturers] = useState([]);
   const [courses, setCourses] = useState([]);
   const [terms, setTerms] = useState([]);
@@ -1560,6 +1832,18 @@ export default function App() {
   const setHydrated = useCallback((value) => {
     hydratedRef.current = value;
     setIsHydrated(value);
+  }, []);
+  const setUserEmail = useCallback((email) => {
+    setSession((prev) => ({ ...prev, userEmail: typeof email === "function" ? email(prev.userEmail) : email }));
+  }, []);
+  const setEntryMode = useCallback((entryMode) => {
+    setSession((prev) => ({ ...prev, entryMode }));
+  }, []);
+  const applyDatabaseSnapshot = useCallback((snapshot) => {
+    setLecturers(snapshot.lecturers);
+    setCourses(snapshot.courses);
+    setTerms(snapshot.terms);
+    setTermPlottings(snapshot.termPlottings);
   }, []);
 
   useEffect(() => {
@@ -1576,17 +1860,9 @@ export default function App() {
       try {
         setHydrated(false);
         setDbStatus("Loading database...");
-        const [lecturerRows, courseRows, termRows, plottingRows] = await Promise.all([
-          fetchTable("lecturers", "name"),
-          fetchTable("courses", "code"),
-          fetchTable("academic_terms", "code"),
-          fetchTable("term_plottings", "id"),
-        ]);
+        const snapshot = await fetchDatabaseSnapshot();
         if (cancelled) return;
-        setLecturers(Array.isArray(lecturerRows) ? lecturerRows.map(normalizeLecturer) : []);
-        setCourses(Array.isArray(courseRows) ? courseRows : []);
-        setTerms(Array.isArray(termRows) ? termRows : []);
-        setTermPlottings(Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : []);
+        applyDatabaseSnapshot(snapshot);
         setHydrated(true);
         setDbStatus("Supabase connected");
       } catch (error) {
@@ -1607,7 +1883,34 @@ export default function App() {
     }
     loadDatabase();
     return () => { cancelled = true; };
-  }, [setHydrated, userEmail]);
+  }, [applyDatabaseSnapshot, setHydrated, setUserEmail, userEmail]);
+
+  const loadPublicDirectory = useCallback(async () => {
+    if (!USE_SUPABASE) {
+      setHydrated(false);
+      setDbStatus("Supabase not configured");
+      return;
+    }
+    try {
+      setHydrated(false);
+      setDbStatus("Loading public directory...");
+      const snapshot = await fetchPublicDatabaseSnapshot();
+      applyDatabaseSnapshot(snapshot);
+      setHydrated(true);
+      setDbStatus("Public directory ready");
+    } catch (error) {
+      setHydrated(false);
+      setDbStatus(error.message || "Public directory load failed");
+    }
+  }, [applyDatabaseSnapshot, setHydrated]);
+
+  useEffect(() => {
+    if (entryMode === "public") loadPublicDirectory();
+  }, [entryMode, loadPublicDirectory]);
+
+  useEffect(() => {
+    if (!userEmail && entryMode === "admin") setEntryMode("login");
+  }, [entryMode, setEntryMode, userEmail]);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
@@ -1645,13 +1948,13 @@ export default function App() {
 
   const handleLogin = (email) => {
     setHydrated(false);
-    setUserEmail(email);
+    setSession({ userEmail: email, entryMode: "admin" });
   };
 
   const handleLogout = () => {
     signOut();
     setHydrated(false);
-    setUserEmail("");
+    setSession({ userEmail: "", entryMode: "landing" });
     setLecturers([]);
     setCourses([]);
     setTerms([]);
@@ -1675,7 +1978,9 @@ export default function App() {
   const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
   const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode };
 
-  if (!userEmail) return <LoginScreen onLogin={handleLogin} />;
+  if (entryMode === "landing") return <LandingScreen onPublicMode={() => setEntryMode("public")} onLoginMode={() => setEntryMode("login")} />;
+  if (entryMode === "public") return <PublicLookupScreen lecturers={lecturers} courses={courses} terms={terms} termPlottings={termPlottings} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} dbStatus={dbStatus} isHydrated={isHydrated} onBack={() => setEntryMode("landing")} onLogin={() => setEntryMode("login")} onRefresh={loadPublicDirectory} />;
+  if (!userEmail) return <LoginScreen onLogin={handleLogin} onBack={() => setEntryMode("landing")} />;
 
   return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><SupabaseStatusIcon connected={isHydrated} label={dbStatus} /><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
 }
