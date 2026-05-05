@@ -276,8 +276,31 @@ function mergeImportedLecturer(existing = {}, imported = {}) {
     phone: imported.phone || existing.phone,
     expertise: imported.expertise?.length ? imported.expertise : existing.expertise,
     plotted: imported.plotted?.length ? imported.plotted : existing.plotted,
-    available: existing.available ?? imported.available,
+    available: imported._hasImportedAvailable ? imported.available : existing.available ?? imported.available,
   });
+}
+
+function dedupeImportedLecturers(items) {
+  const byId = new Map();
+  items.forEach((item) => {
+    const existing = byId.get(item.id);
+    if (!existing) {
+      byId.set(item.id, item);
+      return;
+    }
+    const merged = normalizeLecturer({
+      ...existing,
+      degree: item.degree || existing.degree,
+      name: item.name || existing.name,
+      email: item.email || existing.email,
+      phone: item.phone || existing.phone,
+      expertise: uniq([...(existing.expertise || []), ...(item.expertise || [])]),
+      plotted: uniq([...(existing.plotted || []), ...(item.plotted || [])]),
+      available: item._hasImportedAvailable ? item.available : existing.available,
+    });
+    byId.set(item.id, { ...merged, _hasImportedAvailable: existing._hasImportedAvailable || item._hasImportedAvailable });
+  });
+  return Array.from(byId.values());
 }
 
 function normalizeTermPlotting(row) {
@@ -395,6 +418,10 @@ function runTests() {
 	  const mergedLecturerImport = mergeImportedLecturer(testLecturers[0], { id: "LECT001", email: "new@example.com", phone: "08123456789", plotted: [], available: 0 });
 	  console.assert(mergedLecturerImport.email === "new@example.com" && mergedLecturerImport.phone === "08123456789", "Lecturer import should update completed profile fields");
 	  console.assert(mergedLecturerImport.plotted.includes("COURSE101") && mergedLecturerImport.available === 1, "Lecturer import should preserve existing plotting data");
+	  const availabilityImport = mergeImportedLecturer(testLecturers[0], { id: "LECT001", available: 3, _hasImportedAvailable: true });
+	  console.assert(availabilityImport.available === 3 && availabilityImport.plotted.includes("COURSE101"), "Lecturer import should update availability without changing plotted courses");
+	  const dedupedImport = dedupeImportedLecturers([{ id: "LECT001", email: "a@example.com", expertise: ["Reading"] }, { id: "LECT001", phone: "0800", expertise: ["Writing"], available: 2, _hasImportedAvailable: true }]);
+	  console.assert(dedupedImport.length === 1 && dedupedImport[0].phone === "0800" && dedupedImport[0].expertise.length === 2 && dedupedImport[0].available === 2, "Lecturer import should merge duplicate IDs before upsert");
 	  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
 	}
 runTests();
@@ -690,6 +717,10 @@ function getImportedValue(row, names) {
   return match?.[1] ?? "";
 }
 
+function hasImportedValue(row, names) {
+  return String(getImportedValue(row, names)).trim() !== "";
+}
+
 function isImportRowBlank(row) {
   return Object.values(row).every((value) => String(value ?? "").trim() === "");
 }
@@ -699,7 +730,9 @@ function mapImportedLecturers(rows, courses) {
     const plotted = splitList(getImportedValue(row, ["Plotted_Course_Codes", "Plotted Course Codes", "Plotted Courses", "Plotted", "Courses"]));
     const knownPlotted = plotted.filter((code) => !courses.length || courses.some((course) => course.code === code));
     const importedId = String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim();
-    return normalizeLecturer({
+    const availableKeys = ["Available_Slots", "Available Slots", "Available"];
+    const importedAvailable = Number(getImportedValue(row, availableKeys));
+    return { ...normalizeLecturer({
       id: importedId || `imported-${Date.now()}-${index + 1}`,
       degree: String(getImportedValue(row, ["Degree"])).trim(),
       name: String(getImportedValue(row, ["Name", "Full Name"])).trim(),
@@ -707,8 +740,8 @@ function mapImportedLecturers(rows, courses) {
       phone: String(getImportedValue(row, ["Phone"])).trim(),
       expertise: splitList(getImportedValue(row, ["Expertise"])),
       plotted: knownPlotted,
-      available: Number(getImportedValue(row, ["Available_Slots", "Available Slots", "Available"])) || 0,
-    });
+      available: Number.isFinite(importedAvailable) ? importedAvailable : 0,
+    }), _hasImportedAvailable: hasImportedValue(row, availableKeys) };
   });
 }
 
@@ -1202,14 +1235,15 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   };
 	  const importRows = async (items) => {
 	    if (!selectedTermCode) throw new Error("Create or select a term before importing lecturer data.");
+	    const uniqueItems = dedupeImportedLecturers(items);
 	    const scopedById = new Map(lecturers.map((lecturer) => [lecturer.id, lecturer]));
-	    const directoryRows = items.map((item) => {
+	    const directoryRows = uniqueItems.map((item) => {
 	      const existing = directoryById.get(item.id);
 	      return mergeImportedLecturer(existing, item);
 	    });
-	    const plottingRows = items.map((item) => {
+	    const plottingRows = uniqueItems.map((item) => {
 	      const existing = scopedById.get(item.id);
-	      return normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, { ...item, plotted: existing?.plotted || item.plotted || [], available: existing?.available ?? item.available }));
+	      return normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, { ...item, plotted: existing?.plotted || item.plotted || [], available: item._hasImportedAvailable ? item.available : existing?.available ?? item.available }));
 	    });
     if (USE_SUPABASE) {
       await upsertRows("lecturers", directoryRows, "id");
@@ -1222,7 +1256,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     });
 	    setTermLecturers((prev) => {
 	      const byId = new Map(prev.map((lecturer) => [lecturer.id, lecturer]));
-	      items.forEach((item) => byId.set(item.id, mergeImportedLecturer(byId.get(item.id), item)));
+	      uniqueItems.forEach((item) => byId.set(item.id, mergeImportedLecturer(byId.get(item.id), item)));
 	      return Array.from(byId.values());
 	    });
   };
