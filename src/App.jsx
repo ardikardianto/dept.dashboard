@@ -28,6 +28,7 @@ const Icons = {
 };
 
 const department = { name: "UT English Dept.", email: "sastra.inggris@ecampus.ut.ac.id", subtitle: "Lecturer Admin" };
+const TUTOR_DATA_FORM_URL = "https://sl.ut.ac.id/kepakaran_sasing";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
@@ -982,8 +983,11 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
             <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4f6478]">
               Tutors can view their current profile by ID, while administrators can sign in to manage the department dashboard.
             </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Button onClick={onPublicMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.eye className="h-5 w-5" />Public Mode</Button>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="flex flex-col gap-3">
+                <Button onClick={onPublicMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.eye className="h-5 w-5" />Public Mode</Button>
+                <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7e6f7] bg-white px-6 py-3 text-base font-semibold text-[#102f52] transition hover:bg-[#f4f9ff]"><Icons.file className="h-5 w-5" />Tutor Data Form</a>
+              </div>
               <Button variant="secondary" onClick={onLoginMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.dashboard className="h-5 w-5" />Login Mode</Button>
             </div>
           </motion.section>
