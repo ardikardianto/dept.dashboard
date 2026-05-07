@@ -986,7 +986,7 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
             <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="flex flex-col gap-3">
                 <Button onClick={onPublicMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.eye className="h-5 w-5" />Public Mode</Button>
-                <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7e6f7] bg-white px-6 py-3 text-base font-semibold text-[#102f52] transition hover:bg-[#f4f9ff]"><Icons.file className="h-5 w-5" />Tutor Data Form</a>
+                <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#d7e6f7] bg-white px-4 py-2.5 text-sm font-semibold text-[#102f52] transition hover:bg-[#f4f9ff] !rounded-2xl px-6 py-3 text-base"><Icons.file className="h-5 w-5" />Tutor Data Form</a>
               </div>
               <Button variant="secondary" onClick={onLoginMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.dashboard className="h-5 w-5" />Login Mode</Button>
             </div>
