@@ -32,6 +32,7 @@ const TUTOR_DATA_FORM_URL = "https://sl.ut.ac.id/kepakaran_sasing";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const DEMO_ACCOUNT = { email: "demo@englishdept.test", password: "Demo@12345" };
 
 const nav = [
   { id: "dashboard", label: "Dashboard", icon: Icons.dashboard }, { id: "lecturers", label: "Lecturers", icon: Icons.users },
@@ -60,6 +61,74 @@ const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
 const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 99;
 const LECTURER_CLASS_LIMIT = 4;
 const COURSE_CLASS_PLANS_STORAGE_KEY = "ut_course_class_plans";
+
+const DEMO_COURSES = [
+  { code: "BING4110", title: "Basic Reading", credits: 3 },
+  { code: "BING4211", title: "Intermediate Writing", credits: 3 },
+  { code: "BING4312", title: "English Linguistics", credits: 3 },
+  { code: "BING4413", title: "Translation Studies", credits: 3 },
+  { code: "BING4514", title: "Indonesian Linguistics", credits: 3 },
+  { code: "BING4615", title: "Literary Studies", credits: 3 },
+];
+const DEMO_LECTURERS = [
+  { id: "D001", degree: "Ph.D.", name: "Alya Prameswari", email: "alya.demo@example.com", phone: "0812-0000-1001", expertise: ["English Linguistics", "English Language Teaching"], plotted: [], available: 4 },
+  { id: "D002", degree: "M.Ed.", name: "Bagus Santoso", email: "bagus.demo@example.com", phone: "0812-0000-1002", expertise: ["English Language Teaching"], plotted: ["BING4110"], available: 3 },
+  { id: "D003", degree: "M.A.", name: "Citra Dewi", email: "citra.demo@example.com", phone: "0812-0000-1003", expertise: ["Translation Studies", "English Linguistics"], plotted: ["BING4413", "BING4211"], available: 2 },
+  { id: "D004", degree: "Ph.D.", name: "Damar Nugroho", email: "damar.demo@example.com", phone: "0812-0000-1004", expertise: ["Literary Studies"], plotted: ["BING4615"], available: 3 },
+  { id: "D005", degree: "M.Ed.", name: "Eka Rahmawati", email: "eka.demo@example.com", phone: "0812-0000-1005", expertise: ["English Language Teaching", "Literary Studies"], plotted: ["BING4110", "BING4211", "BING4312"], available: 1 },
+  { id: "D006", degree: "M.A.", name: "Farhan Wijaya", email: "farhan.demo@example.com", phone: "0812-0000-1006", expertise: ["Indonesian Linguistics", "Translation Studies"], plotted: [], available: 4 },
+  { id: "D007", degree: "Ph.D.", name: "Gita Larasati", email: "gita.demo@example.com", phone: "0812-0000-1007", expertise: ["Indonesian Linguistics", "English Linguistics"], plotted: ["BING4514", "BING4312", "BING4413", "BING4615"], available: 0 },
+  { id: "D008", degree: "M.Ed.", name: "Hendra Saputra", email: "hendra.demo@example.com", phone: "0812-0000-1008", expertise: ["English Language Teaching", "Translation Studies"], plotted: ["BING4110", "BING4211"], available: 2 },
+];
+const DEMO_TERMS = [
+  { code: "DEMO-2026-1", name: "Demo Term 2026 - Semester 1", ay: "2026/2027", semester: "Semester 1", active: true },
+  { code: "DEMO-2025-2", name: "Demo Term 2025 - Semester 2", ay: "2025/2026", semester: "Semester 2", active: false },
+];
+const DEMO_TERM_PLOTTINGS = DEMO_LECTURERS.map((lecturer) => buildDemoTermPlotting("DEMO-2026-1", lecturer)).concat([
+  buildDemoTermPlotting("DEMO-2025-2", { ...DEMO_LECTURERS[0], plotted: ["BING4110", "BING4312"], available: 2 }),
+  buildDemoTermPlotting("DEMO-2025-2", { ...DEMO_LECTURERS[2], plotted: ["BING4413"], available: 3 }),
+  buildDemoTermPlotting("DEMO-2025-2", { ...DEMO_LECTURERS[4], plotted: ["BING4211", "BING4615"], available: 2 }),
+]);
+const DEMO_COURSE_CLASS_PLANS = {
+  "DEMO-2026-1": {
+    counts: { BING4110: 3, BING4211: 3, BING4312: 2, BING4413: 2, BING4514: 1, BING4615: 2 },
+    assignments: {
+      BING4110: ["D002", "D005", "D008"],
+      BING4211: ["D003", "D005", "D008"],
+      BING4312: ["D005", "D007"],
+      BING4413: ["D003", "D007"],
+      BING4514: ["D007"],
+      BING4615: ["D004", "D007"],
+    },
+  },
+  "DEMO-2025-2": {
+    counts: { BING4110: 1, BING4211: 1, BING4312: 1, BING4413: 1, BING4615: 1 },
+    assignments: { BING4110: ["D001"], BING4211: ["D005"], BING4312: ["D001"], BING4413: ["D003"], BING4615: ["D005"] },
+  },
+};
+
+function buildDemoTermPlotting(termCode, lecturer) {
+  return {
+    id: `${termCode}::${lecturer.id}`,
+    term_code: termCode,
+    lecturer_id: lecturer.id,
+    plotted: Array.isArray(lecturer.plotted) ? lecturer.plotted : [],
+    available: Number(lecturer.available ?? 0),
+  };
+}
+
+function cloneDemoSnapshot() {
+  return {
+    lecturers: DEMO_LECTURERS.map(normalizeLecturer),
+    courses: DEMO_COURSES.map((course) => ({ ...course })),
+    terms: DEMO_TERMS.map((term) => ({ ...term })),
+    termPlottings: DEMO_TERM_PLOTTINGS.map(normalizeTermPlotting),
+  };
+}
+
+function cloneDemoCourseClassPlans() {
+  return JSON.parse(JSON.stringify(DEMO_COURSE_CLASS_PLANS));
+}
 
 function toClassCount(value) {
   const count = Number(value);
@@ -424,6 +493,9 @@ function runTests() {
 	  const dedupedImport = dedupeImportedLecturers([{ id: "LECT001", email: "a@example.com", expertise: ["Reading"] }, { id: "LECT001", phone: "0800", expertise: ["Writing"], available: 2, _hasImportedAvailable: true }]);
 	  console.assert(dedupedImport.length === 1 && dedupedImport[0].phone === "0800" && dedupedImport[0].expertise.length === 2 && dedupedImport[0].available === 2, "Lecturer import should merge duplicate IDs before upsert");
 	  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
+  const demoSnapshot = cloneDemoSnapshot();
+  console.assert(demoSnapshot.lecturers.length >= 5 && demoSnapshot.courses.length >= 5, "Demo snapshot should include enough data for presentation");
+  console.assert(demoSnapshot.terms.some((term) => term.active), "Demo snapshot should include an active term");
 	}
 runTests();
 
@@ -1207,7 +1279,7 @@ function LecturerInfoCard({ lecturer, courses }) {
   return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div>{hasContact && <div className="grid gap-4 sm:grid-cols-2">{lecturer.email && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card>}{lecturer.phone && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card>}</div>}<Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.length ? lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-slate-500">No expertise listed</span>}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.plotted.length ? <PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /> : <span className="text-sm text-slate-500">No plotted courses listed</span>}</div></Card></div>;
 }
 
-function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode }) {
+function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode, canSyncData = true }) {
   const importInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [degree, setDegree] = useState("All");
@@ -1254,7 +1326,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
 	      const existing = scopedById.get(item.id);
 	      return normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, { ...item, plotted: existing?.plotted || item.plotted || [], available: item._hasImportedAvailable ? item.available : existing?.available ?? item.available }));
 	    });
-    if (USE_SUPABASE) {
+    if (USE_SUPABASE && canSyncData) {
       await upsertRows("lecturers", directoryRows, "id");
       await upsertRows("term_plottings", plottingRows, "id");
     }
@@ -1704,12 +1776,34 @@ function Terms({ terms, setTerms, onActiveTermChange }) {
   return <div className="space-y-5"><div className="flex justify-end"><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />New term</Button></div><Card className="grid items-end gap-3 p-4 md:grid-cols-[1fr_220px]"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search term, code, year, semester, or status..." /><SelectBox label="Sort by" value={sort} onChange={setSort} options={["name", "code", "ay", "semester"]} /></Card>{rows.map((term) => <Card key={term.code} className="p-5"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-4"><Icons.check className={term.active ? "h-6 w-6 text-emerald-500" : "h-6 w-6 text-slate-300"} /><div><p className="text-lg font-medium text-slate-950">{term.name}</p><p className="text-sm font-normal text-slate-500">{term.code} · AY {term.ay} · {term.semester} · {term.active ? "active" : "inactive"}</p></div></div><div className="flex gap-3"><button onClick={() => setModal(term)}><Icons.edit className="h-4 w-4" /></button><button onClick={() => remove(term.code)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></div></Card>)}{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No terms match your search.</p>}{modal && <Modal title={modal.code ? "Edit term" : "New term"} onClose={() => setModal(null)}><TermForm initial={modal.code ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
-function LoginScreen({ onLogin, onBack }) {
+function LoginScreen({ onLogin, onBack, onDemoLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const submit = async () => { setError(""); setBusy(true); try { const loggedInEmail = await signIn(email, password); onLogin(loggedInEmail); } catch (err) { setError(err.message || "Authentication failed."); } finally { setBusy(false); } };
+  const isDemoCredentials = email.trim().toLowerCase() === DEMO_ACCOUNT.email && password === DEMO_ACCOUNT.password;
+  const submit = async () => {
+    setError("");
+    if (isDemoCredentials) {
+      onDemoLogin();
+      return;
+    }
+    setBusy(true);
+    try {
+      const loggedInEmail = await signIn(email, password);
+      onLogin(loggedInEmail);
+    } catch (err) {
+      setError(err.message || "Authentication failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const useDemoAccount = () => {
+    setEmail(DEMO_ACCOUNT.email);
+    setPassword(DEMO_ACCOUNT.password);
+    setError("");
+    onDemoLogin();
+  };
   return (
     <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
@@ -1801,9 +1895,15 @@ function LoginScreen({ onLogin, onBack }) {
                   <TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />
                 </label>
                 {error && <p className="rounded-xl bg-[#fde2e2] px-3 py-2 text-sm font-semibold text-[#8a3a3a]">{error}</p>}
-                <Button className="w-full !rounded-2xl !bg-[#005baa] py-3 text-base !text-white hover:!bg-[#004984]" onClick={submit} disabled={!USE_SUPABASE || busy || !email || !password}>
+                <Button className="w-full !rounded-2xl !bg-[#005baa] py-3 text-base !text-white hover:!bg-[#004984]" onClick={submit} disabled={busy || !email || !password || (!USE_SUPABASE && !isDemoCredentials)}>
                   {busy ? "Processing..." : "Sign in"}
                 </Button>
+                <button type="button" onClick={useDemoAccount} className="w-full rounded-2xl border border-[#d7e6f7] bg-white px-4 py-3 text-base font-semibold text-[#102f52] transition hover:bg-[#f4f9ff]">
+                  Use demo account
+                </button>
+                <p className="text-center text-xs font-semibold leading-5 text-[#6f8295]">
+                  Demo account: {DEMO_ACCOUNT.email} / {DEMO_ACCOUNT.password}
+                </p>
               </div>
             </motion.section>
           </div>
@@ -1817,10 +1917,11 @@ export default function App() {
   const [active, setActive] = useState("dashboard");
   const [session, setSession] = useState(() => {
     const initialEmail = getStoredUserEmail();
-    return { userEmail: initialEmail, entryMode: initialEmail ? "admin" : "landing" };
+    return { userEmail: initialEmail, entryMode: initialEmail ? "admin" : "landing", isDemo: false };
   });
   const userEmail = session.userEmail;
   const entryMode = session.entryMode;
+  const isDemoSession = Boolean(session.isDemo);
   const [lecturers, setLecturers] = useState([]);
   const [courses, setCourses] = useState([]);
   const [terms, setTerms] = useState([]);
@@ -1851,6 +1952,14 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function loadDatabase() {
+      if (isDemoSession) {
+        applyDatabaseSnapshot(cloneDemoSnapshot());
+        setCourseClassPlans(cloneDemoCourseClassPlans());
+        setSelectedTermCode("DEMO-2026-1");
+        setHydrated(true);
+        setDbStatus("Demo data loaded");
+        return;
+      }
       if (!USE_SUPABASE || !userEmail || !getAccessToken()) {
         setHydrated(false);
         if (userEmail) {
@@ -1885,7 +1994,7 @@ export default function App() {
     }
     loadDatabase();
     return () => { cancelled = true; };
-  }, [applyDatabaseSnapshot, setHydrated, setUserEmail, userEmail]);
+  }, [applyDatabaseSnapshot, isDemoSession, setHydrated, setUserEmail, userEmail]);
 
   const loadPublicDirectory = useCallback(async () => {
     if (!USE_SUPABASE) {
@@ -1916,8 +2025,9 @@ export default function App() {
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
+    if (isDemoSession) return;
     localStorage.setItem(COURSE_CLASS_PLANS_STORAGE_KEY, JSON.stringify(courseClassPlans));
-  }, [courseClassPlans]);
+  }, [courseClassPlans, isDemoSession]);
 
   const activeTermCode = terms.find((term) => term.active)?.code || "";
   const effectiveSelectedTermCode = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : activeTermCode || terms[0]?.code || "";
@@ -1927,7 +2037,7 @@ export default function App() {
   }, [lecturers, termPlottings]);
 
   useEffect(() => {
-    if (!USE_SUPABASE || !userEmail || !hydratedRef.current || syncingRef.current) return;
+    if (isDemoSession || !USE_SUPABASE || !userEmail || !hydratedRef.current || syncingRef.current) return;
     const timer = window.setTimeout(async () => {
       try {
         syncingRef.current = true;
@@ -1946,21 +2056,29 @@ export default function App() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [lecturers, courses, terms, validTermPlottings, userEmail]);
+  }, [lecturers, courses, terms, validTermPlottings, userEmail, isDemoSession]);
 
   const handleLogin = (email) => {
     setHydrated(false);
-    setSession({ userEmail: email, entryMode: "admin" });
+    setSession({ userEmail: email, entryMode: "admin", isDemo: false });
+  };
+
+  const handleDemoLogin = () => {
+    signOut();
+    setActive("dashboard");
+    setHydrated(false);
+    setSession({ userEmail: DEMO_ACCOUNT.email, entryMode: "admin", isDemo: true });
   };
 
   const handleLogout = () => {
     signOut();
     setHydrated(false);
-    setSession({ userEmail: "", entryMode: "landing" });
+    setSession({ userEmail: "", entryMode: "landing", isDemo: false });
     setLecturers([]);
     setCourses([]);
     setTerms([]);
     setTermPlottings([]);
+    setCourseClassPlans(getStoredCourseClassPlans());
     setSelectedTermCode("");
     setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   };
@@ -1978,11 +2096,11 @@ export default function App() {
   }, [lecturers, effectiveSelectedTermCode]);
   const pageLecturers = active === "dashboard" || active === "lecturers" || active === "plotting" ? termScopedLecturers : lecturers;
   const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
-  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode };
+  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode, canSyncData: !isDemoSession };
 
   if (entryMode === "landing") return <LandingScreen onPublicMode={() => setEntryMode("public")} onLoginMode={() => setEntryMode("login")} />;
   if (entryMode === "public") return <PublicLookupScreen lecturers={lecturers} courses={courses} terms={terms} termPlottings={termPlottings} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} dbStatus={dbStatus} isHydrated={isHydrated} onBack={() => setEntryMode("landing")} onLogin={() => setEntryMode("login")} onRefresh={loadPublicDirectory} />;
-  if (!userEmail) return <LoginScreen onLogin={handleLogin} onBack={() => setEntryMode("landing")} />;
+  if (!userEmail) return <LoginScreen onLogin={handleLogin} onDemoLogin={handleDemoLogin} onBack={() => setEntryMode("landing")} />;
 
   return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><SupabaseStatusIcon connected={isHydrated} label={dbStatus} /><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
 }
