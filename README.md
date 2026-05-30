@@ -12,6 +12,7 @@ The project also includes an isolated demo account with dummy data for presentat
 ## Features
 
 - Lecturer directory with ID, degree, full name, email, phone, expertise, availability, and plotted courses.
+- Admin-managed lecturer labels for teaching performance rating and warning notes.
 - Dashboard infographics for degree, expertise, plotted course count, availability, and average plotted courses per lecturer.
 - Course plotting by course or by lecturer.
 - Term-based plotting, so the same lecturer database can be reused across academic terms.
@@ -42,6 +43,7 @@ department-dashboard/
 |   |-- main.jsx
 |   `-- index.css
 |-- supabase-public-profile-views.sql
+|-- supabase-lecturer-labels.sql
 |-- supabase-term-plottings.sql
 |-- index.html
 |-- package.json
@@ -156,6 +158,14 @@ supabase-term-plottings.sql
 
 This creates the `term_plottings` table and row-level security policies for authenticated users.
 
+To store lecturer ratings and warning notes, run:
+
+```bash
+supabase-lecturer-labels.sql
+```
+
+The app stays backward-compatible if this SQL has not been run yet, but ratings and warning notes will not persist to Supabase until the columns exist.
+
 Finally, run:
 
 ```bash
@@ -204,6 +214,8 @@ Never commit `.env.local`. It is already ignored by `.gitignore`.
   name: "Lecturer Name",
   email: "lecturer@example.com",
   phone: "08123456789",
+  rating: 4,
+  warning_note: "Needs coordination follow-up before extra classes.",
   expertise: ["English Linguistics", "Translation Studies"],
   plotted: ["BING4110", "BING4211"],
   available: 2
@@ -254,6 +266,8 @@ Name
 Degree
 Email
 Phone
+Rating
+Warning_Note
 Expertise
 Available_Slots
 Plotted_Course_Codes

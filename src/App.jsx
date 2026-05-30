@@ -20,8 +20,10 @@ const Icons = {
   menu: (p) => <IconBase {...p}><path d="M4 6h16M4 12h16M4 18h16" /></IconBase>,
   plus: (p) => <IconBase {...p}><path d="M12 5v14M5 12h14" /></IconBase>,
   search: (p) => <IconBase {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></IconBase>,
+  star: (p) => <IconBase {...p}><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.3-6.2 3.3 1.2-6.8-5-4.9 6.9-1L12 2Z" /></IconBase>,
   trash: (p) => <IconBase {...p}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /></IconBase>,
   users: (p) => <IconBase {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></IconBase>,
+  warning: (p) => <IconBase {...p}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></IconBase>,
   x: (p) => <IconBase {...p}><path d="M18 6 6 18M6 6l12 12" /></IconBase>,
   chart: (p) => <IconBase {...p}><path d="M3 3v18h18" /><rect x="7" y="12" width="3" height="5" /><rect x="12" y="8" width="3" height="9" /><rect x="17" y="5" width="3" height="12" /></IconBase>,
   check: (p) => <IconBase {...p}><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-5" /></IconBase>,
@@ -71,14 +73,14 @@ const DEMO_COURSES = [
   { code: "BING4615", title: "Literary Studies", credits: 3 },
 ];
 const DEMO_LECTURERS = [
-  { id: "D001", degree: "Ph.D.", name: "Alya Prameswari", email: "alya.demo@example.com", phone: "0812-0000-1001", expertise: ["English Linguistics", "English Language Teaching"], plotted: [], available: 4 },
-  { id: "D002", degree: "M.Ed.", name: "Bagus Santoso", email: "bagus.demo@example.com", phone: "0812-0000-1002", expertise: ["English Language Teaching"], plotted: ["BING4110"], available: 3 },
-  { id: "D003", degree: "M.A.", name: "Citra Dewi", email: "citra.demo@example.com", phone: "0812-0000-1003", expertise: ["Translation Studies", "English Linguistics"], plotted: ["BING4413", "BING4211"], available: 2 },
-  { id: "D004", degree: "Ph.D.", name: "Damar Nugroho", email: "damar.demo@example.com", phone: "0812-0000-1004", expertise: ["Literary Studies"], plotted: ["BING4615"], available: 3 },
-  { id: "D005", degree: "M.Ed.", name: "Eka Rahmawati", email: "eka.demo@example.com", phone: "0812-0000-1005", expertise: ["English Language Teaching", "Literary Studies"], plotted: ["BING4110", "BING4211", "BING4312"], available: 1 },
-  { id: "D006", degree: "M.A.", name: "Farhan Wijaya", email: "farhan.demo@example.com", phone: "0812-0000-1006", expertise: ["Indonesian Linguistics", "Translation Studies"], plotted: [], available: 4 },
-  { id: "D007", degree: "Ph.D.", name: "Gita Larasati", email: "gita.demo@example.com", phone: "0812-0000-1007", expertise: ["Indonesian Linguistics", "English Linguistics"], plotted: ["BING4514", "BING4312", "BING4413", "BING4615"], available: 0 },
-  { id: "D008", degree: "M.Ed.", name: "Hendra Saputra", email: "hendra.demo@example.com", phone: "0812-0000-1008", expertise: ["English Language Teaching", "Translation Studies"], plotted: ["BING4110", "BING4211"], available: 2 },
+  { id: "D001", degree: "Ph.D.", name: "Alya Prameswari", email: "alya.demo@example.com", phone: "0812-0000-1001", expertise: ["English Linguistics", "English Language Teaching"], plotted: [], available: 4, rating: 5, warning_note: "" },
+  { id: "D002", degree: "M.Ed.", name: "Bagus Santoso", email: "bagus.demo@example.com", phone: "0812-0000-1002", expertise: ["English Language Teaching"], plotted: ["BING4110"], available: 3, rating: 4, warning_note: "" },
+  { id: "D003", degree: "M.A.", name: "Citra Dewi", email: "citra.demo@example.com", phone: "0812-0000-1003", expertise: ["Translation Studies", "English Linguistics"], plotted: ["BING4413", "BING4211"], available: 2, rating: 4, warning_note: "" },
+  { id: "D004", degree: "Ph.D.", name: "Damar Nugroho", email: "damar.demo@example.com", phone: "0812-0000-1004", expertise: ["Literary Studies"], plotted: ["BING4615"], available: 3, rating: 5, warning_note: "" },
+  { id: "D005", degree: "M.Ed.", name: "Eka Rahmawati", email: "eka.demo@example.com", phone: "0812-0000-1005", expertise: ["English Language Teaching", "Literary Studies"], plotted: ["BING4110", "BING4211", "BING4312"], available: 1, rating: 3, warning_note: "Needs coordination follow-up before extra classes." },
+  { id: "D006", degree: "M.A.", name: "Farhan Wijaya", email: "farhan.demo@example.com", phone: "0812-0000-1006", expertise: ["Indonesian Linguistics", "Translation Studies"], plotted: [], available: 4, rating: 0, warning_note: "" },
+  { id: "D007", degree: "Ph.D.", name: "Gita Larasati", email: "gita.demo@example.com", phone: "0812-0000-1007", expertise: ["Indonesian Linguistics", "English Linguistics"], plotted: ["BING4514", "BING4312", "BING4413", "BING4615"], available: 0, rating: 5, warning_note: "" },
+  { id: "D008", degree: "M.Ed.", name: "Hendra Saputra", email: "hendra.demo@example.com", phone: "0812-0000-1008", expertise: ["English Language Teaching", "Translation Studies"], plotted: ["BING4110", "BING4211"], available: 2, rating: 4, warning_note: "" },
 ];
 const DEMO_TERMS = [
   { code: "DEMO-2026-1", name: "Demo Term 2026 - Semester 1", ay: "2026/2027", semester: "Semester 1", active: true },
@@ -333,6 +335,8 @@ function normalizeLecturer(row) {
     expertise: Array.isArray(row.expertise) ? row.expertise : [],
     plotted: Array.isArray(row.plotted) ? row.plotted : [],
     available: Number(row.available ?? 0),
+    rating: clampRating(row.rating),
+    warning_note: String(row.warning_note || row.warningNote || "").trim(),
   };
 }
 
@@ -347,6 +351,8 @@ function mergeImportedLecturer(existing = {}, imported = {}) {
     expertise: imported.expertise?.length ? imported.expertise : existing.expertise,
     plotted: imported.plotted?.length ? imported.plotted : existing.plotted,
     available: imported._hasImportedAvailable ? imported.available : existing.available ?? imported.available,
+    rating: imported._hasImportedRating ? imported.rating : existing.rating ?? imported.rating,
+    warning_note: imported._hasImportedWarningNote ? imported.warning_note : existing.warning_note ?? imported.warning_note,
   });
 }
 
@@ -367,8 +373,10 @@ function dedupeImportedLecturers(items) {
       expertise: uniq([...(existing.expertise || []), ...(item.expertise || [])]),
       plotted: uniq([...(existing.plotted || []), ...(item.plotted || [])]),
       available: item._hasImportedAvailable ? item.available : existing.available,
+      rating: item._hasImportedRating ? item.rating : existing.rating,
+      warning_note: item._hasImportedWarningNote ? item.warning_note : existing.warning_note,
     });
-    byId.set(item.id, { ...merged, _hasImportedAvailable: existing._hasImportedAvailable || item._hasImportedAvailable });
+    byId.set(item.id, { ...merged, _hasImportedAvailable: existing._hasImportedAvailable || item._hasImportedAvailable, _hasImportedRating: existing._hasImportedRating || item._hasImportedRating, _hasImportedWarningNote: existing._hasImportedWarningNote || item._hasImportedWarningNote });
   });
   return Array.from(byId.values());
 }
@@ -414,6 +422,23 @@ function availabilityTone(value) {
   return "green";
 }
 
+function clampRating(value) {
+  const rating = Number(value);
+  if (!Number.isFinite(rating)) return 0;
+  return Math.min(5, Math.max(0, Math.round(rating)));
+}
+
+function serializeLecturersForDatabase(lecturers, includeLabels = false) {
+  return lecturers.map((lecturer) => {
+    const row = { ...lecturer };
+    if (!includeLabels) {
+      delete row.rating;
+      delete row.warning_note;
+    }
+    return row;
+  });
+}
+
 function buildLecturerExportRows(lecturers, courses) {
   return lecturers.map((lecturer) => ({
     Lecturer_ID: lecturer.id,
@@ -421,6 +446,8 @@ function buildLecturerExportRows(lecturers, courses) {
     Degree: lecturer.degree,
     Email: lecturer.email,
     Phone: lecturer.phone,
+    Rating: lecturer.rating,
+    Warning_Note: lecturer.warning_note,
     Expertise: lecturer.expertise.join("; "),
     Plotted_Course_Codes: lecturer.plotted.join("; "),
     Plotted_Course_Names: plottedCourseTitles(lecturer, courses).join("; "),
@@ -442,8 +469,8 @@ function runTests() {
     { code: "COURSE102", title: "Academic Writing", credits: 3 },
   ];
   const testLecturers = [
-    { id: "LECT001", degree: "M.A.", name: "Test Lecturer", email: "lecturer@example.com", phone: "0800000000", expertise: ["Reading"], plotted: ["COURSE101"], available: 1 },
-    { id: "LECT002", degree: "Ph.D.", name: "Second Lecturer", email: "second@example.com", phone: "0800000001", expertise: ["Writing"], plotted: ["COURSE101", "COURSE102"], available: 4 },
+    { id: "LECT001", degree: "M.A.", name: "Test Lecturer", email: "lecturer@example.com", phone: "0800000000", expertise: ["Reading"], plotted: ["COURSE101"], available: 1, rating: 4, warning_note: "" },
+    { id: "LECT002", degree: "Ph.D.", name: "Second Lecturer", email: "second@example.com", phone: "0800000001", expertise: ["Writing"], plotted: ["COURSE101", "COURSE102"], available: 4, rating: 3, warning_note: "Needs follow-up" },
   ];
   const testTerms = [
     { code: "TERM001", name: "Active Term", ay: "2025/2026", semester: "Semester 2", active: true },
@@ -459,6 +486,7 @@ function runTests() {
   const exportRows = buildLecturerExportRows(testLecturers, testCourses);
   console.assert(exportRows.length === testLecturers.length, "Export row count should match lecturer count");
   console.assert(exportRows[0].Plotted_Course_Names.includes("Basic Reading"), "Export should include plotted course names");
+  console.assert(exportRows[1].Rating === 3 && exportRows[1].Warning_Note === "Needs follow-up", "Export should include lecturer labels");
   console.assert(plottedCourseTitles(testLecturers[0], testCourses).includes("Basic Reading"), "Lecturer display should resolve plotted course names");
   console.assert(plottedCourseCountLabel(1) === "1 plotted course", "Singular label should work");
   console.assert(plottedCourseCountLabel(2) === "2 plotted courses", "Plural label should work");
@@ -490,6 +518,9 @@ function runTests() {
 	  console.assert(mergedLecturerImport.plotted.includes("COURSE101") && mergedLecturerImport.available === 1, "Lecturer import should preserve existing plotting data");
 	  const availabilityImport = mergeImportedLecturer(testLecturers[0], { id: "LECT001", available: 3, _hasImportedAvailable: true });
 	  console.assert(availabilityImport.available === 3 && availabilityImport.plotted.includes("COURSE101"), "Lecturer import should update availability without changing plotted courses");
+  const labelImport = mergeImportedLecturer(testLecturers[0], { id: "LECT001", rating: 5, warning_note: "Review before plotting", _hasImportedRating: true, _hasImportedWarningNote: true });
+  console.assert(labelImport.rating === 5 && labelImport.warning_note === "Review before plotting", "Lecturer import should update labels when provided");
+  console.assert(!("rating" in serializeLecturersForDatabase(testLecturers, false)[0]) && serializeLecturersForDatabase(testLecturers, true)[0].rating === 4, "Lecturer label sync should be database-compatible");
 	  const dedupedImport = dedupeImportedLecturers([{ id: "LECT001", email: "a@example.com", expertise: ["Reading"] }, { id: "LECT001", phone: "0800", expertise: ["Writing"], available: 2, _hasImportedAvailable: true }]);
 	  console.assert(dedupedImport.length === 1 && dedupedImport[0].phone === "0800" && dedupedImport[0].expertise.length === 2 && dedupedImport[0].available === 2, "Lecturer import should merge duplicate IDs before upsert");
 	  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
@@ -805,6 +836,9 @@ function mapImportedLecturers(rows, courses) {
     const importedId = String(getImportedValue(row, ["Lecturer_ID", "Lecturer ID", "ID"])).trim();
     const availableKeys = ["Available_Slots", "Available Slots", "Available"];
     const importedAvailable = Number(getImportedValue(row, availableKeys));
+    const ratingKeys = ["Rating", "Teaching_Rating", "Teaching Rating", "Performance Rating"];
+    const importedRating = Number(getImportedValue(row, ratingKeys));
+    const warningNoteKeys = ["Warning_Note", "Warning Note", "Warning", "Notice"];
     return { ...normalizeLecturer({
       id: importedId || `imported-${Date.now()}-${index + 1}`,
       degree: String(getImportedValue(row, ["Degree"])).trim(),
@@ -814,7 +848,9 @@ function mapImportedLecturers(rows, courses) {
       expertise: splitList(getImportedValue(row, ["Expertise"])),
       plotted: knownPlotted,
       available: Number.isFinite(importedAvailable) ? importedAvailable : 0,
-    }), _hasImportedAvailable: hasImportedValue(row, availableKeys) };
+      rating: Number.isFinite(importedRating) ? importedRating : 0,
+      warning_note: String(getImportedValue(row, warningNoteKeys)).trim(),
+    }), _hasImportedAvailable: hasImportedValue(row, availableKeys), _hasImportedRating: hasImportedValue(row, ratingKeys), _hasImportedWarningNote: hasImportedValue(row, warningNoteKeys) };
   });
 }
 
@@ -880,6 +916,19 @@ async function fetchPublicDatabaseSnapshot() {
     terms: Array.isArray(termRows) ? termRows : [],
     termPlottings: Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : [],
   };
+}
+
+async function fetchLecturerLabelColumnSupport() {
+  if (!USE_SUPABASE) return false;
+  try {
+    await supabaseRequest("/rest/v1/lecturers?select=rating,warning_note&limit=1", {
+      method: "GET",
+      headers: supabaseHeaders(),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function upsertRows(table, rows, conflictKey) {
@@ -958,6 +1007,17 @@ function Badge({ children, tone = "blue" }) {
   return <span className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-normal ${tones[tone] || tones.blue}`}>{children}</span>;
 }
 
+function RatingStars({ rating = 0, showEmpty = true }) {
+  const value = clampRating(rating);
+  if (!showEmpty && value === 0) return null;
+  return <span className="inline-flex items-center gap-1" aria-label={`${value} of 5 rating`}>{Array.from({ length: 5 }, (_, index) => <svg key={index} viewBox="0 0 24 24" className={`h-4 w-4 ${index < value ? "text-[#f4b000]" : "text-[#d7e0ea]"}`} aria-hidden="true"><path fill="currentColor" d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.3-6.2 3.3 1.2-6.8-5-4.9 6.9-1L12 2Z" /></svg>)}</span>;
+}
+
+function WarningNotice({ note }) {
+  if (!String(note || "").trim()) return null;
+  return <span className="inline-flex max-w-xs items-center gap-1 rounded-lg border border-[#f3caca] bg-[#fde2e2] px-2 py-1 text-xs font-semibold text-[#8a3a3a]" title={note}><Icons.warning className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{note}</span></span>;
+}
+
 function Card({ children, className = "" }) {
   return <div className={`rounded-2xl border border-[#d7e6f7] bg-white shadow-sm shadow-[#005baa]/5 ${className}`}>{children}</div>;
 }
@@ -988,6 +1048,10 @@ function Modal({ title, children, onClose }) {
 
 function PlainInput({ label, value = "", onChange, placeholder, type = "text" }) {
   return <label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} type={type} placeholder={placeholder} className="w-full rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]" /></label>;
+}
+
+function PlainTextarea({ label, value = "", onChange, placeholder }) {
+  return <label className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">{label}</span><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} className="w-full resize-y rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 py-2.5 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]" /></label>;
 }
 
 function PlainSelect({ label, value = "", onChange, options = [] }) {
@@ -1265,21 +1329,21 @@ function LecturerForm({ initial, onSave, onClose }) {
   const degreeOptions = initial?.degreeOptions || DEFAULT_DEGREE_OPTIONS;
   const expertiseOptions = initial?.expertiseOptions || lecturerFormExpertiseOptions;
   const [form, setForm] = useState(() => {
-    const base = initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", plotted: [], available: 0 };
-    return { ...base, degree: degreeOptions.includes(base.degree) ? base.degree : degreeOptions[0], expertise: Array.isArray(base.expertise) ? base.expertise : splitList(base.expertiseText) };
+    const base = initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", plotted: [], available: 0, rating: 0, warning_note: "" };
+    return { ...base, degree: degreeOptions.includes(base.degree) ? base.degree : degreeOptions[0], expertise: Array.isArray(base.expertise) ? base.expertise : splitList(base.expertiseText), rating: clampRating(base.rating), warning_note: String(base.warning_note || "") };
   });
   const save = () => {
-    onSave({ id: form.id, degree: form.degree, name: form.name, email: form.email, phone: form.phone, available: Number(form.available ?? 0), expertise: uniq(form.expertise), plotted: Array.isArray(form.plotted) ? form.plotted : [] });
+    onSave({ id: form.id, degree: form.degree, name: form.name, email: form.email, phone: form.phone, available: Number(form.available ?? 0), rating: clampRating(form.rating), warning_note: String(form.warning_note || "").trim(), expertise: uniq(form.expertise), plotted: Array.isArray(form.plotted) ? form.plotted : [] });
   };
-  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainSelect label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} options={degreeOptions} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><ExpertiseSelect label="Expertise" value={form.expertise} onChange={(value) => setForm({ ...form, expertise: value })} options={expertiseOptions} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.id}>Save lecturer</Button></div></div>;
+  return <div className="space-y-4"><FormGrid><PlainInput label="ID" value={form.id} onChange={(value) => setForm({ ...form, id: value })} /><PlainSelect label="Degree" value={form.degree} onChange={(value) => setForm({ ...form, degree: value })} options={degreeOptions} /></FormGrid><PlainInput label="Full name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><FormGrid><PlainInput label="Email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} /><PlainInput label="Phone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} /></FormGrid><FormGrid><ExpertiseSelect label="Expertise" value={form.expertise} onChange={(value) => setForm({ ...form, expertise: value })} options={expertiseOptions} /><PlainInput label="Available slots (0-4)" type="number" value={form.available} onChange={(value) => setForm({ ...form, available: value })} /></FormGrid><FormGrid><PlainSelect label="Teaching performance rating" value={String(form.rating)} onChange={(value) => setForm({ ...form, rating: Number(value) })} options={["0", "1", "2", "3", "4", "5"]} /><div className="space-y-1.5"><span className="text-xs font-normal text-[#53616c]">Rating preview</span><div className="flex h-11 items-center rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3"><RatingStars rating={form.rating} /></div></div></FormGrid><PlainTextarea label="Warning note" value={form.warning_note} onChange={(value) => setForm({ ...form, warning_note: value })} placeholder="Leave empty when there is no warning note." /><div className="flex justify-end gap-3"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} disabled={!form.id}>Save lecturer</Button></div></div>;
 }
 
 function LecturerInfoCard({ lecturer, courses }) {
   const hasContact = Boolean(lecturer.email || lecturer.phone);
-  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div>{hasContact && <div className="grid gap-4 sm:grid-cols-2">{lecturer.email && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card>}{lecturer.phone && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card>}</div>}<Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.length ? lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-slate-500">No expertise listed</span>}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.plotted.length ? <PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /> : <span className="text-sm text-slate-500">No plotted courses listed</span>}</div></Card></div>;
+  return <div className="space-y-5"><div className="rounded-2xl bg-blue-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-blue-700">Lecturer Profile</p><h3 className="mt-2 text-2xl font-medium text-slate-950">{lecturer.name}</h3><p className="mt-1 text-sm font-normal text-slate-600">{lecturer.degree} · ID {lecturer.id}</p><div className="mt-3 flex flex-wrap items-center gap-2"><RatingStars rating={lecturer.rating} /> <WarningNotice note={lecturer.warning_note} /></div></div><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available} available slots</Badge></div></div>{hasContact && <div className="grid gap-4 sm:grid-cols-2">{lecturer.email && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.email}</p></Card>}{lecturer.phone && <Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Phone</p><p className="mt-2 text-sm font-normal text-slate-800">{lecturer.phone}</p></Card>}</div>}<Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Expertise</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.expertise.length ? lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>) : <span className="text-sm text-slate-500">No expertise listed</span>}</div></Card><Card className="p-4"><p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Plotted Courses</p><div className="mt-3 flex flex-wrap gap-2">{lecturer.plotted.length ? <PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /> : <span className="text-sm text-slate-500">No plotted courses listed</span>}</div></Card></div>;
 }
 
-function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode, canSyncData = true }) {
+function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecturers, courses, selectedTermCode, canSyncData = true, canSyncLecturerLabels = false }) {
   const importInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [degree, setDegree] = useState("All");
@@ -1304,8 +1368,8 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setSort(value);
   };
   const sortHeader = (label, value) => <button type="button" onClick={() => sortBy(value)} className="inline-flex items-center gap-1 font-medium uppercase tracking-[0.15em] text-slate-500 hover:text-blue-700">{label}{sort === value && <span>{sortDirection === "asc" ? "↑" : "↓"}</span>}</button>;
-  const rows = useMemo(() => lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.phone, lecturer.degree, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => degree === "All" || lecturer.degree === degree).filter((lecturer) => expertise === "All" || lecturer.expertise.includes(expertise)).filter((lecturer) => available === "All" || String(lecturer.available) === available).filter((lecturer) => plottedClasses === "All" || String(lecturer.plotted.length) === plottedClasses).sort((a, b) => {
-    const result = sort === "plotted" || sort === "available" ? Number(a[sort === "plotted" ? "plotted" : "available"]?.length ?? a[sort] ?? 0) - Number(b[sort === "plotted" ? "plotted" : "available"]?.length ?? b[sort] ?? 0) : String(a[sort] ?? "").localeCompare(String(b[sort] ?? ""));
+  const rows = useMemo(() => lecturers.filter((lecturer) => [lecturer.id, lecturer.name, lecturer.email, lecturer.phone, lecturer.degree, lecturer.rating, lecturer.warning_note, lecturer.expertise.join(" "), lecturer.plotted.join(" "), plottedCourseTitles(lecturer, courses).join(" ")].some((value) => includes(value, query))).filter((lecturer) => degree === "All" || lecturer.degree === degree).filter((lecturer) => expertise === "All" || lecturer.expertise.includes(expertise)).filter((lecturer) => available === "All" || String(lecturer.available) === available).filter((lecturer) => plottedClasses === "All" || String(lecturer.plotted.length) === plottedClasses).sort((a, b) => {
+    const result = sort === "plotted" || sort === "available" || sort === "rating" ? Number(a[sort === "plotted" ? "plotted" : sort]?.length ?? a[sort] ?? 0) - Number(b[sort === "plotted" ? "plotted" : sort]?.length ?? b[sort] ?? 0) : String(a[sort] ?? "").localeCompare(String(b[sort] ?? ""));
     return sortDirection === "asc" ? result : -result;
   }), [lecturers, courses, query, degree, expertise, available, plottedClasses, sort, sortDirection]);
   const save = (item) => {
@@ -1325,9 +1389,9 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
 	    const plottingRows = uniqueItems.map((item) => {
 	      const existing = scopedById.get(item.id);
 	      return normalizeTermPlotting(buildTermPlottingRow(selectedTermCode, { ...item, plotted: existing?.plotted || item.plotted || [], available: item._hasImportedAvailable ? item.available : existing?.available ?? item.available }));
-	    });
+    });
     if (USE_SUPABASE && canSyncData) {
-      await upsertRows("lecturers", directoryRows, "id");
+      await upsertRows("lecturers", serializeLecturersForDatabase(directoryRows, canSyncLecturerLabels), "id");
       await upsertRows("term_plottings", plottingRows, "id");
     }
     setLecturers((prev) => {
@@ -1377,14 +1441,14 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     const focusTimer = window.setTimeout(() => mobileSearchInputRef.current?.focus(), 80);
     return () => window.clearTimeout(focusTimer);
   }, [mobileSearchOpen]);
-  const lecturerFilterControls = <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Plotted classes" value={plottedClasses} onChange={setPlottedClasses} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "plotted", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setPlottedClasses("All"); setSort("name"); setSortDirection("asc"); }}>Reset</Button></div>;
-  const mobileLecturerFilterRail = <div className="mobile-filter-fab__rail"><NativeFilterIconSelect label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} icon={Icons.graduation} /><NativeFilterIconSelect label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} icon={Icons.book} /><NativeFilterIconSelect label="Sort By" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "plotted", "available"]} includeAll={false} icon={Icons.chart} /><button type="button" title="Reset" aria-label="Reset filters" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setPlottedClasses("All"); setSort("name"); setSortDirection("asc"); }}><Icons.x className="h-4 w-4" /></button></div>;
+  const lecturerFilterControls = <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6"><SelectBox label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} /><SelectBox label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} /><SelectBox label="Available" value={available} onChange={setAvailable} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Plotted classes" value={plottedClasses} onChange={setPlottedClasses} options={["0", "1", "2", "3", "4"]} /><SelectBox label="Sort by" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "rating", "plotted", "available"]} /><Button variant="secondary" className="mt-5" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setPlottedClasses("All"); setSort("name"); setSortDirection("asc"); }}>Reset</Button></div>;
+  const mobileLecturerFilterRail = <div className="mobile-filter-fab__rail"><NativeFilterIconSelect label="Degree" value={degree} onChange={setDegree} options={uniq(lecturers.map((lecturer) => lecturer.degree))} icon={Icons.graduation} /><NativeFilterIconSelect label="Expertise" value={expertise} onChange={setExpertise} options={uniq(lecturers.flatMap((lecturer) => lecturer.expertise))} icon={Icons.book} /><NativeFilterIconSelect label="Sort By" value={sort} onChange={(value) => { setSort(value); setSortDirection("asc"); }} options={["name", "id", "degree", "rating", "plotted", "available"]} includeAll={false} icon={Icons.chart} /><button type="button" title="Reset" aria-label="Reset filters" onClick={() => { setQuery(""); setDegree("All"); setExpertise("All"); setAvailable("All"); setPlottedClasses("All"); setSort("name"); setSortDirection("asc"); }}><Icons.x className="h-4 w-4" /></button></div>;
   const openMobileSearch = () => {
     setMobileFiltersOpen(false);
     setMobileSearchOpen(true);
   };
   const remove = (id) => setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
-  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, warning, rating, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("Rating", "rating")}</th><th className="px-4 py-4 font-medium">Notice</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4"><RatingStars rating={lecturer.rating} /></td><td className="px-4 py-4"><WarningNotice note={lecturer.warning_note} /></td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseClassPlans, setCourseClassPlans }) {
@@ -1930,6 +1994,7 @@ export default function App() {
   const [selectedTermCode, setSelectedTermCode] = useState("");
   const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   const [isHydrated, setIsHydrated] = useState(false);
+  const [canSyncLecturerLabels, setCanSyncLecturerLabels] = useState(false);
   const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
   const setHydrated = useCallback((value) => {
@@ -1956,6 +2021,7 @@ export default function App() {
         applyDatabaseSnapshot(cloneDemoSnapshot());
         setCourseClassPlans(cloneDemoCourseClassPlans());
         setSelectedTermCode("DEMO-2026-1");
+        setCanSyncLecturerLabels(true);
         setHydrated(true);
         setDbStatus("Demo data loaded");
         return;
@@ -1971,11 +2037,12 @@ export default function App() {
       try {
         setHydrated(false);
         setDbStatus("Loading database...");
-        const snapshot = await fetchDatabaseSnapshot();
+        const [snapshot, lecturerLabelsSupported] = await Promise.all([fetchDatabaseSnapshot(), fetchLecturerLabelColumnSupport()]);
         if (cancelled) return;
+        setCanSyncLecturerLabels(lecturerLabelsSupported);
         applyDatabaseSnapshot(snapshot);
         setHydrated(true);
-        setDbStatus("Supabase connected");
+        setDbStatus(lecturerLabelsSupported ? "Supabase connected" : "Supabase connected. Run lecturer labels SQL to save ratings and warning notes.");
       } catch (error) {
         setHydrated(false);
         if (error.status === 401 || error.status === 403) {
@@ -1984,9 +2051,10 @@ export default function App() {
           setLecturers([]);
           setCourses([]);
           setTerms([]);
-          setTermPlottings([]);
-          setSelectedTermCode("");
-          setDbStatus("Session expired. Please sign in again.");
+        setTermPlottings([]);
+        setSelectedTermCode("");
+        setCanSyncLecturerLabels(false);
+        setDbStatus("Session expired. Please sign in again.");
           return;
         }
         setDbStatus(error.message || "Database load failed");
@@ -2043,7 +2111,7 @@ export default function App() {
         syncingRef.current = true;
         setDbStatus("Saving...");
         await Promise.all([
-          syncTable("lecturers", lecturers, "id"),
+          syncTable("lecturers", serializeLecturersForDatabase(lecturers, canSyncLecturerLabels), "id"),
           syncTable("courses", courses, "code"),
           syncTable("academic_terms", terms, "code"),
           syncTable("term_plottings", validTermPlottings, "id"),
@@ -2056,7 +2124,7 @@ export default function App() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [lecturers, courses, terms, validTermPlottings, userEmail, isDemoSession]);
+  }, [lecturers, courses, terms, validTermPlottings, userEmail, isDemoSession, canSyncLecturerLabels]);
 
   const handleLogin = (email) => {
     setHydrated(false);
@@ -2079,6 +2147,7 @@ export default function App() {
     setTerms([]);
     setTermPlottings([]);
     setCourseClassPlans(getStoredCourseClassPlans());
+    setCanSyncLecturerLabels(false);
     setSelectedTermCode("");
     setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   };
@@ -2096,7 +2165,7 @@ export default function App() {
   }, [lecturers, effectiveSelectedTermCode]);
   const pageLecturers = active === "dashboard" || active === "lecturers" || active === "plotting" ? termScopedLecturers : lecturers;
   const pageSetLecturers = active === "plotting" ? setTermScopedLecturers : setLecturers;
-  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode, canSyncData: !isDemoSession };
+  const props = { lecturers: pageLecturers, directoryLecturers: lecturers, setLecturers: pageSetLecturers, setTermLecturers: setTermScopedLecturers, courses, setCourses, terms, setTerms, setTermPlottings, selectedTermCode: effectiveSelectedTermCode, courseClassPlans, setCourseClassPlans, onActiveTermChange: setSelectedTermCode, canSyncData: !isDemoSession, canSyncLecturerLabels };
 
   if (entryMode === "landing") return <LandingScreen onPublicMode={() => setEntryMode("public")} onLoginMode={() => setEntryMode("login")} />;
   if (entryMode === "public") return <PublicLookupScreen lecturers={lecturers} courses={courses} terms={terms} termPlottings={termPlottings} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} dbStatus={dbStatus} isHydrated={isHydrated} onBack={() => setEntryMode("landing")} onLogin={() => setEntryMode("login")} onRefresh={loadPublicDirectory} />;
