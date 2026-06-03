@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart as RePieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { LECTURER_CLASS_LIMIT, buildAutoPilotPlotting, expertiseMatchesCourse } from "./lib/autoPilot.js";
 
 function IconBase({ children, className = "h-5 w-5", ...props }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>{children}</svg>;
@@ -60,7 +61,6 @@ const plottedCourseTitles = (lecturer, courses) => lecturer.plotted.map((code) =
 const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "course" : "courses"}`;
 const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
 const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 99;
-const LECTURER_CLASS_LIMIT = 4;
 const COURSE_CLASS_PLANS_STORAGE_KEY = "ut_course_class_plans";
 
 const DEMO_COURSES = [
@@ -253,149 +253,6 @@ function applyCourseAssignmentsToLecturers(lecturers, courses, assignmentMap) {
     });
   });
   return lecturers.map((lecturer) => ({ ...lecturer, plotted: plottedByLecturer.get(lecturer.id) || [] }));
-}
-
-function expertiseMatchesCourse(lecturer, course) {
-  const courseText = `${course.code} ${course.title}`.toLowerCase();
-  return lecturer.expertise.some((item) => {
-    const expertise = String(item || "").trim().toLowerCase();
-    return expertise && (courseText.includes(expertise) || expertise.includes(course.title.toLowerCase()));
-  });
-}
-
-function getLecturerAutoPilotCapacity(lecturer) {
-  const currentLoad = Array.isArray(lecturer.plotted) ? lecturer.plotted.length : 0;
-  const availableSlots = Number(lecturer.available ?? 0);
-  return Math.min(LECTURER_CLASS_LIMIT, Math.max(0, currentLoad + (Number.isFinite(availableSlots) ? availableSlots : 0)));
-}
-
-function lecturerHasAutoPilotRisk(lecturer) {
-  return Boolean(String(lecturer.warning_note || "").trim()) || clampRating(lecturer.rating) === 2;
-}
-
-function buildAutoPilotCourseSlots(courses, classCounts, lecturers) {
-  return courses.flatMap((course) => Array.from({ length: classCounts[course.code] || 0 }, (_, index) => ({ course, index }))).sort((a, b) => {
-    const aMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, a.course)).length;
-    const bMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, b.course)).length;
-    return aMatches - bMatches || a.course.code.localeCompare(b.course.code) || a.index - b.index;
-  });
-}
-
-function buildAutoPilotPlotting(lecturers, courses, classCounts) {
-  const plannedCourses = courses.filter((course) => (classCounts[course.code] || 0) > 0);
-  const assignmentMap = Object.fromEntries(courses.map((course) => [course.code, Array.from({ length: classCounts[course.code] || 0 }, () => "")]));
-  const slots = buildAutoPilotCourseSlots(plannedCourses, classCounts, lecturers);
-  const assignmentExplanations = [];
-  const conflictWarningSet = new Set();
-  const states = lecturers.map((lecturer) => ({
-    lecturer,
-    assigned: 0,
-    capacity: getLecturerAutoPilotCapacity(lecturer),
-    rating: clampRating(lecturer.rating),
-    restricted: lecturerHasAutoPilotRisk(lecturer),
-  }));
-
-  const scoreCandidate = (state, course) => {
-    const expertiseScore = expertiseMatchesCourse(state.lecturer, course) ? 120 : 0;
-    const ratingScore = state.rating ? state.rating * 12 : 18;
-    const remainingCapacity = Math.max(0, state.capacity - state.assigned);
-    const currentCourseCount = (assignmentMap[course.code] || []).filter((id) => id === state.lecturer.id).length;
-    const warningPenalty = String(state.lecturer.warning_note || "").trim() ? 35 : 0;
-    const lowRatingPenalty = state.rating === 2 ? 30 : 0;
-    return expertiseScore + ratingScore + remainingCapacity * 8 + state.capacity * 3 - state.assigned * 26 - currentCourseCount * 14 - warningPenalty - lowRatingPenalty;
-  };
-
-  const chooseCandidate = (course, targetLimit, includeRestricted) => {
-    return states
-      .filter((state) => state.capacity > 0 && state.assigned < state.capacity && state.assigned < targetLimit && (includeRestricted || !state.restricted))
-      .map((state) => ({ state, score: scoreCandidate(state, course) }))
-      .sort((a, b) => b.score - a.score || a.state.assigned - b.state.assigned || b.state.rating - a.state.rating || a.state.lecturer.name.localeCompare(b.state.lecturer.name))[0]?.state || null;
-  };
-
-  const assignSlot = (slot, state, phaseLabel) => {
-    if (!state) return false;
-    const expertiseMatched = expertiseMatchesCourse(state.lecturer, slot.course);
-    const priorCourseCount = (assignmentMap[slot.course.code] || []).filter((id) => id === state.lecturer.id).length;
-    const warningNote = String(state.lecturer.warning_note || "").trim();
-    const warnings = [];
-    if (!expertiseMatched) {
-      warnings.push("No listed expertise match");
-      conflictWarningSet.add(`${slot.course.code}.${slot.index + 1} was assigned outside listed expertise to ${state.lecturer.name}.`);
-    }
-    if (!state.rating) {
-      warnings.push("No performance rating recorded");
-      conflictWarningSet.add(`${state.lecturer.name} has no performance rating; confirm suitability for ${slot.course.code}.${slot.index + 1}.`);
-    }
-    if (state.rating === 2) {
-      warnings.push("2-star rating used after eligible pass");
-      conflictWarningSet.add(`${state.lecturer.name} has a 2-star rating and was used only after eligible lecturers were considered.`);
-    }
-    if (warningNote) {
-      warnings.push(`Warning note: ${warningNote}`);
-      conflictWarningSet.add(`${state.lecturer.name} has a warning note and was used only after eligible lecturers were considered.`);
-    }
-    if (state.assigned + 1 >= state.capacity && state.capacity > 0) warnings.push("Lecturer reaches available/capacity limit");
-    assignmentMap[slot.course.code][slot.index] = state.lecturer.id;
-    assignmentExplanations.push({
-      id: `${slot.course.code}.${slot.index + 1}`,
-      courseCode: slot.course.code,
-      courseTitle: slot.course.title,
-      className: `${slot.course.code}.${slot.index + 1}`,
-      lecturerId: state.lecturer.id,
-      lecturerName: state.lecturer.name,
-      reasons: [
-        expertiseMatched ? "Expertise matches the course." : "Selected by rating, availability, and workload because no expertise match was available.",
-        state.rating ? `${state.rating}-star performance rating.` : "No performance rating recorded.",
-        `Capacity after assignment: ${state.assigned + 1}/${state.capacity}.`,
-        priorCourseCount ? `Already had ${priorCourseCount} class(es) for this course.` : "No duplicate class for this course before assignment.",
-        phaseLabel,
-      ],
-      warnings,
-    });
-    state.assigned += 1;
-    return true;
-  };
-
-  [1, 2].forEach((targetLimit) => {
-    slots.forEach((slot) => {
-      if (assignmentMap[slot.course.code][slot.index]) return;
-      assignSlot(slot, chooseCandidate(slot.course, targetLimit, false), `First distribution pass for up to ${targetLimit} class(es), excluding warning notes and 2-star ratings.`);
-    });
-  });
-
-  [3, 4].forEach((targetLimit) => {
-    slots.forEach((slot) => {
-      if (assignmentMap[slot.course.code][slot.index]) return;
-      assignSlot(slot, chooseCandidate(slot.course, targetLimit, true), `Additional distribution pass for up to ${targetLimit} class(es), using full scoring rules.`);
-    });
-  });
-
-  const assignedCount = Object.values(assignmentMap).reduce((sum, ids) => sum + ids.filter(Boolean).length, 0);
-  const plannedCount = slots.length;
-  const expertiseMatchCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => {
-    const lecturer = lecturers.find((item) => item.id === id);
-    return lecturer && expertiseMatchesCourse(lecturer, course);
-  }).length, 0);
-  const eligibleFirstPass = states.filter((state) => state.capacity > 0 && !state.restricted).length;
-  const restrictedLecturers = states.filter((state) => state.restricted);
-  const fullLecturers = states.filter((state) => state.assigned >= state.capacity && state.capacity > 0);
-  const unassignedByCourse = plannedCourses
-    .map((course) => ({ course, count: (assignmentMap[course.code] || []).filter((id) => !id).length }))
-    .filter((item) => item.count > 0);
-
-  const reviewNotes = [
-    `Auto-pilot assigned ${assignedCount} of ${plannedCount} planned classes with a ${LECTURER_CLASS_LIMIT}-class lecturer cap.`,
-    `First pass prioritized ${eligibleFirstPass} lecturers for up to 2 classes each, excluding lecturers with warning notes or 2-star ratings.`,
-    `Expertise matched ${expertiseMatchCount} assigned ${expertiseMatchCount === 1 ? "class" : "classes"}; remaining choices used rating, available capacity, and current plotted load.`,
-  ];
-  if (restrictedLecturers.length) reviewNotes.push(`${restrictedLecturers.length} lecturer(s) with warning notes or 2-star ratings were deprioritized for the first 2 classes: ${restrictedLecturers.map((state) => state.lecturer.name).join(", ")}.`);
-  if (fullLecturers.length) reviewNotes.push(`${fullLecturers.length} lecturer(s) reached their available/capacity limit: ${fullLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${state.capacity})`).join(", ")}.`);
-  if (unassignedByCourse.length) reviewNotes.push(`Manual review needed for unassigned classes: ${unassignedByCourse.map(({ course, count }) => `${course.code} ${course.title} (${count})`).join("; ")}.`);
-  unassignedByCourse.forEach(({ course, count }) => conflictWarningSet.add(`${course.code} ${course.title} still has ${count} unassigned planned class(es).`));
-  if (!plannedCount) reviewNotes.push("No planned classes were found. Set planned class counts before running auto-pilot.");
-
-  const conflictWarnings = Array.from(conflictWarningSet);
-  return { assignmentMap, reviewNotes, conflictWarnings, assignmentExplanations, assignedCount, plannedCount };
 }
 
 function buildPlottingExportRows(lecturers, courses, plannedCounts = {}, assignmentMap = null) {
@@ -628,19 +485,26 @@ function runTests() {
   console.assert(getCourseClassCounts(testLecturers, testCourses, { COURSE101: 3 }).COURSE101 === 3, "Planned class count should override assigned count when larger");
   console.assert(getCourseAssignmentMap(testLecturers, testCourses).COURSE101.length === 2, "Course assignment map should include each assigned class");
   console.assert(expertiseMatchesCourse(testLecturers[0], testCourses[0]), "Expertise should match course title");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["English Language Teaching"] }, testCourses[0]), "Course expertise rules should match teaching expertise to reading/writing courses");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Indonesian Linguistics"] }, { code: "COURSE103", title: "Tata Bahasa Indonesia", credits: 3 }), "Course expertise rules should match Indonesian Linguistics courses");
   const autoPilotLecturers = [
     { ...testLecturers[0], id: "AUTO001", name: "Reading Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 5, warning_note: "" },
     { ...testLecturers[1], id: "AUTO002", name: "Writing Expert", expertise: ["Writing"], plotted: [], available: 4, rating: 4, warning_note: "" },
-    { ...testLecturers[0], id: "AUTO003", name: "Low Rated Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 2, warning_note: "" },
+    { ...testLecturers[0], id: "AUTO003", name: "Low Rated Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 1, warning_note: "" },
     { ...testLecturers[1], id: "AUTO004", name: "Warning Expert", expertise: ["Writing"], plotted: [], available: 4, rating: 5, warning_note: "Review first" },
   ];
   const autoPilotResult = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 3 });
   console.assert(autoPilotResult.assignedCount === 6, "Auto-pilot should assign all classes when capacity exists");
   console.assert(countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO001") >= 2 && countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO002") >= 2, "Auto-pilot should distribute 2 classes first to eligible lecturers");
   console.assert(autoPilotLecturers.every((lecturer) => countLecturerAssignments(autoPilotResult.assignmentMap, lecturer.id) <= LECTURER_CLASS_LIMIT), "Auto-pilot should respect the 4-class lecturer cap");
-  console.assert(autoPilotResult.reviewNotes.some((note) => note.includes("Auto-pilot assigned")), "Auto-pilot should provide admin review notes");
+  console.assert(autoPilotResult.reviewNotes.some((note) => note.includes("Auto-pilot preserved")), "Auto-pilot should provide admin review notes");
   console.assert(autoPilotResult.assignmentExplanations.length === autoPilotResult.assignedCount, "Auto-pilot should explain each assigned class");
   console.assert(autoPilotResult.conflictWarnings.length > 0, "Auto-pilot should surface warning-note and low-rating conflicts");
+  console.assert(autoPilotResult.metrics.expertiseMatchRate >= 50, "Auto-pilot should report an expertise match rate");
+  console.assert(autoPilotResult.metrics.loadDistribution.reduce((sum, item) => sum + item.count, 0) === autoPilotLecturers.length, "Auto-pilot should report workload distribution");
+  const preservedAutoPilot = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 1 }, { COURSE101: ["AUTO004", "", ""], COURSE102: ["AUTO001"] });
+  console.assert(preservedAutoPilot.assignmentMap.COURSE101[0] === "AUTO004" && preservedAutoPilot.assignmentMap.COURSE102[0] === "AUTO001", "Auto-pilot should preserve existing plotting assignments");
+  console.assert(preservedAutoPilot.metrics.preservedCount === 2, "Auto-pilot should report preserved plotting assignments");
   const plottingRows = buildPlottingExportRows(testLecturers, testCourses, { COURSE101: 3 });
   console.assert(plottingRows.length === 4, "Plotting export should include planned classes and existing assignments");
   console.assert(plottingRows[0].Idtutor === "LECT001" && plottingRows[0].Kelas === "COURSE101.1" && plottingRows[0]["Nama MK"] === "Basic Reading", "Plotting export should match the Excel plotting schema");
@@ -1741,17 +1605,17 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   };
   const runAutoPilot = () => {
     if (!selectedTermCode) {
-      setAutoPilotReview({ notes: ["Create or select a term before running auto-pilot plotting."], warnings: [], explanations: [] });
+      setAutoPilotReview({ notes: ["Create or select a term before running auto-pilot plotting."], warnings: [], explanations: [], metrics: null });
       return;
     }
-    const result = buildAutoPilotPlotting(lecturers, courses, classCounts);
+    const result = buildAutoPilotPlotting(lecturers, courses, classCounts, assignmentMap);
     const nextCounts = Object.fromEntries(courses.map((course) => [course.code, classCounts[course.code] || 0]));
     setCourseClassPlans((prev) => {
       const { counts } = getCoursePlanParts(prev, selectedTermCode);
       return { ...prev, [selectedTermCode]: { counts: { ...counts, ...nextCounts }, assignments: result.assignmentMap } };
     });
     setLecturers((prev) => applyCourseAssignmentsToLecturers(prev, courses, result.assignmentMap));
-    setAutoPilotReview({ notes: result.reviewNotes, warnings: result.conflictWarnings, explanations: result.assignmentExplanations });
+    setAutoPilotReview({ notes: result.reviewNotes, warnings: result.conflictWarnings, explanations: result.assignmentExplanations, metrics: result.metrics });
     const firstAssignedCourseCode = courses.find((course) => result.assignmentMap[course.code]?.some(Boolean))?.code || "";
     if (firstAssignedCourseCode) setSelectedCourseCode(firstAssignedCourseCode);
     setImportMessage("");
@@ -1760,6 +1624,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const autoPilotNotes = autoPilotReview?.notes || [];
   const autoPilotWarnings = autoPilotReview?.warnings || [];
   const autoPilotExplanations = autoPilotReview?.explanations || [];
+  const autoPilotMetrics = autoPilotReview?.metrics;
   return (
     <div className="space-y-5">
       <Card className="p-4">
@@ -1807,6 +1672,51 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
           <ul className="mt-4 space-y-2 text-sm leading-6 text-[#4f6478]">
             {autoPilotNotes.map((note) => <li key={note} className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] px-3 py-2">{note}</li>)}
           </ul>
+          {autoPilotMetrics && (
+            <div className="mt-5 space-y-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Filled open slots</p>
+                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.newlyAssignedCount}</p>
+                  <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.preservedCount} preserved</p>
+                </div>
+                <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Expertise match</p>
+                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.expertiseMatchRate}%</p>
+                  <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.expertiseMatchCount} matched assignments</p>
+                </div>
+                <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Risk assignments</p>
+                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.warningAssignmentCount + autoPilotMetrics.lowRatingAssignmentCount}</p>
+                  <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.unratedAssignmentCount} unrated</p>
+                </div>
+                <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Balance spread</p>
+                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.loadSpread}</p>
+                  <p className="mt-1 text-xs text-[#61717b]">Avg. {autoPilotMetrics.averageLoad.toFixed(1)} classes</p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#315577]">Workload distribution</p>
+                  <p className="text-xs text-[#61717b]">Lecturers grouped by assigned classes after auto-pilot</p>
+                </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-5">
+                  {autoPilotMetrics.loadDistribution.map((item) => (
+                    <div key={item.load} className="rounded-lg bg-[#f7fbf6] p-3">
+                      <div className="flex items-center justify-between gap-2 text-xs text-[#61717b]">
+                        <span>{item.load} class{item.load === 1 ? "" : "es"}</span>
+                        <strong className="text-[#102f52]">{item.count}</strong>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#dce9e6]">
+                        <div className="h-full rounded-full bg-[#005baa]" style={{ width: `${Math.min(100, item.count * 18)}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.35fr]">
             <div className="rounded-xl border border-[#f3dda2] bg-[#fff9df] p-4">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#71540f]">Conflict warnings</p>
