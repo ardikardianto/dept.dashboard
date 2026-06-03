@@ -505,6 +505,9 @@ function runTests() {
   const preservedAutoPilot = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 1 }, { COURSE101: ["AUTO004", "", ""], COURSE102: ["AUTO001"] });
   console.assert(preservedAutoPilot.assignmentMap.COURSE101[0] === "AUTO004" && preservedAutoPilot.assignmentMap.COURSE102[0] === "AUTO001", "Auto-pilot should preserve existing plotting assignments");
   console.assert(preservedAutoPilot.metrics.preservedCount === 2, "Auto-pilot should report preserved plotting assignments");
+  const zeroAvailabilityAutoPilot = buildAutoPilotPlotting(autoPilotLecturers.map((lecturer) => ({ ...lecturer, available: 0 })), testCourses, { COURSE101: 2, COURSE102: 2 });
+  console.assert(zeroAvailabilityAutoPilot.assignedCount === 4, "Auto-pilot should use the class cap fallback when all availability values are zero");
+  console.assert(zeroAvailabilityAutoPilot.reviewNotes.some((note) => note.includes("No positive availability slots")), "Auto-pilot should explain the zero-availability fallback");
   const plottingRows = buildPlottingExportRows(testLecturers, testCourses, { COURSE101: 3 });
   console.assert(plottingRows.length === 4, "Plotting export should include planned classes and existing assignments");
   console.assert(plottingRows[0].Idtutor === "LECT001" && plottingRows[0].Kelas === "COURSE101.1" && plottingRows[0]["Nama MK"] === "Basic Reading", "Plotting export should match the Excel plotting schema");

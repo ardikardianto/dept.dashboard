@@ -2,6 +2,7 @@ export const LECTURER_CLASS_LIMIT = 4;
 
 const LOW_RATING_THRESHOLD = 2;
 const EQUAL_DISTRIBUTION_TARGET = 2;
+const AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE = "No positive availability slots were found, so auto-pilot used the 4-class lecturer cap as a fallback for this run.";
 
 const COURSE_EXPERTISE_RULES = [
   {
@@ -78,8 +79,9 @@ export function expertiseMatchesCourse(lecturer, course) {
   });
 }
 
-export function getLecturerAutoPilotCapacity(lecturer) {
+export function getLecturerAutoPilotCapacity(lecturer, useAvailabilityFallback = false) {
   const currentLoad = Array.isArray(lecturer?.plotted) ? lecturer.plotted.length : 0;
+  if (useAvailabilityFallback) return LECTURER_CLASS_LIMIT;
   const availableSlots = Number(lecturer?.available ?? 0);
   return Math.min(LECTURER_CLASS_LIMIT, Math.max(0, currentLoad + (Number.isFinite(availableSlots) ? availableSlots : 0)));
 }
@@ -179,6 +181,8 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
   const assignmentMap = buildInitialAssignmentMap(lecturers, courses, classCounts, existingAssignmentMap);
   const preservedAssignmentMap = Object.fromEntries(Object.entries(assignmentMap).map(([code, ids]) => [code, [...ids]]));
   const slots = buildAutoPilotCourseSlots(plannedCourses, classCounts, lecturers).filter((slot) => !assignmentMap[slot.course.code]?.[slot.index]);
+  const hasPositiveAvailabilityData = lecturers.some((lecturer) => Number(lecturer?.available || 0) > 0);
+  const useAvailabilityFallback = Boolean(slots.length && lecturers.length && !hasPositiveAvailabilityData);
   const assignmentExplanations = [];
   const conflictWarningSet = new Set();
   const states = lecturers.map((lecturer) => {
@@ -186,7 +190,7 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
     return {
       lecturer,
       assigned,
-      capacity: getLecturerAutoPilotCapacity(lecturer),
+      capacity: getLecturerAutoPilotCapacity(lecturer, useAvailabilityFallback),
       rating: clampRating(lecturer.rating),
       restricted: lecturerHasAutoPilotRisk(lecturer),
     };
@@ -283,10 +287,11 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
 
   const reviewNotes = [
     `Auto-pilot preserved ${metrics.preservedCount} existing assignment(s) and filled ${metrics.newlyAssignedCount} open class slot(s).`,
+    useAvailabilityFallback ? AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE : "",
     `Total result: ${metrics.assignedCount} of ${metrics.plannedCount} planned classes assigned with a ${LECTURER_CLASS_LIMIT}-class lecturer cap.`,
     `First pass prioritized ${eligibleFirstPass} lecturers for up to ${EQUAL_DISTRIBUTION_TARGET} classes each, excluding lecturers with warning notes or 1-2 star ratings.`,
     `Expertise matched ${metrics.expertiseMatchCount} assigned ${metrics.expertiseMatchCount === 1 ? "class" : "classes"} (${metrics.expertiseMatchRate}%); remaining choices used rating, available capacity, and current plotted load.`,
-  ];
+  ].filter(Boolean);
   if (restrictedLecturers.length) reviewNotes.push(`${restrictedLecturers.length} lecturer(s) with warning notes or 1-2 star ratings were deprioritized for the first ${EQUAL_DISTRIBUTION_TARGET} classes: ${restrictedLecturers.map((state) => state.lecturer.name).join(", ")}.`);
   if (fullLecturers.length) reviewNotes.push(`${fullLecturers.length} lecturer(s) reached their available/capacity limit: ${fullLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${state.capacity})`).join(", ")}.`);
   if (unassignedByCourse.length) reviewNotes.push(`Manual review needed for unassigned classes: ${unassignedByCourse.map(({ course, count }) => `${course.code} ${course.title} (${count})`).join("; ")}.`);
