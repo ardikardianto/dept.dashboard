@@ -1450,7 +1450,9 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   };
   useEffect(() => {
     const handleScroll = () => {
-      if (document.activeElement?.closest?.(".mobile-filter-fab")) return;
+      const activeElement = document.activeElement;
+      if (activeElement?.closest?.(".mobile-filter-fab, .mobile-search-modal")) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(activeElement?.tagName || "") || activeElement?.isContentEditable) return;
       setMobileFiltersOpen(false);
       setMobileSearchOpen(false);
       setMobileFiltersVisible(false);
