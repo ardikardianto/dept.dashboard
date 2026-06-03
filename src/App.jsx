@@ -487,6 +487,13 @@ function runTests() {
   console.assert(expertiseMatchesCourse(testLecturers[0], testCourses[0]), "Expertise should match course title");
   console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["English Language Teaching"] }, testCourses[0]), "Course expertise rules should match teaching expertise to reading/writing courses");
   console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Indonesian Linguistics"] }, { code: "COURSE103", title: "Tata Bahasa Indonesia", credits: 3 }), "Course expertise rules should match Indonesian Linguistics courses");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Literary Studies"] }, { code: "COURSE104", title: "Pengantar Ilmu Sastra", credits: 3 }), "Course expertise rules should match literary studies courses");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["English Linguistics"] }, { code: "COURSE105", title: "Pengantar Linguistik Umum", credits: 3 }), "Course expertise rules should match general linguistics to English Linguistics");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Indonesian Linguistics"] }, { code: "COURSE105", title: "Pengantar Linguistik Umum", credits: 3 }), "Course expertise rules should match general linguistics to Indonesian Linguistics");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Translation Studies"] }, { code: "COURSE106", title: "Grammar Translation Exercises", credits: 3 }), "Course expertise rules should match grammar translation to Translation Studies");
+  console.assert(expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Philosophy"] }, { code: "COURSE107", title: "Sejarah Pemikiran Modern", credits: 3 }), "Course expertise rules should match philosophy courses");
+  console.assert(!expertiseMatchesCourse({ ...testLecturers[0], expertise: ["English Linguistics"] }, { code: "COURSE108", title: "Basic Grammar", credits: 3 }), "Grammar alone should not match English Linguistics after keyword removal");
+  console.assert(!expertiseMatchesCourse({ ...testLecturers[0], expertise: ["Indonesian Linguistics"] }, { code: "COURSE109", title: "Analisis Teks", credits: 3 }), "Analisis teks alone should not match Indonesian Linguistics after keyword removal");
   const autoPilotLecturers = [
     { ...testLecturers[0], id: "AUTO001", name: "Reading Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 5, warning_note: "" },
     { ...testLecturers[1], id: "AUTO002", name: "Writing Expert", expertise: ["Writing"], plotted: [], available: 4, rating: 4, warning_note: "" },

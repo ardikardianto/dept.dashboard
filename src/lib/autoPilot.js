@@ -7,23 +7,27 @@ const AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE = "No positive availability slots we
 const COURSE_EXPERTISE_RULES = [
   {
     expertise: "English Language Teaching",
-    keywords: ["reading", "writing", "listening", "speaking", "teaching", "elt", "tesol", "grammar", "vocabulary", "composition", "language assessment"],
+    keywords: ["reading", "writing", "listening", "speaking", "teaching", "elt", "tesol", "vocabulary", "composition", "language assessment", "artikel ilmiah"],
   },
   {
     expertise: "English Linguistics",
-    keywords: ["english linguistics", "linguistics", "syntax", "phonology", "morphology", "semantics", "pragmatics", "discourse", "grammar"],
+    keywords: ["english linguistics", "linguistics", "syntax", "phonology", "morphology", "semantics", "pragmatics", "pragmatik", "discourse", "pengantar linguistik umum", "grammar translation exercises", "metode penelitian", "artikel ilmiah"],
   },
   {
     expertise: "Translation Studies",
-    keywords: ["translation", "translating", "translator", "interpreting"],
+    keywords: ["translation", "translating", "translator", "interpreting", "teori dan masalah penerjemahan", "grammar translation exercises", "penerjemahan karya fiksi", "analisis teks dalam penerjemahan", "metode penelitian", "praktik penerjemahan", "ukt", "artikel ilmiah"],
   },
   {
     expertise: "Indonesian Linguistics",
-    keywords: ["indonesian", "bahasa indonesia", "tata bahasa", "analisis teks", "pemahaman"],
+    keywords: ["indonesian", "bahasa indonesia", "tata bahasa", "pemahaman", "pengantar linguistik umum", "pragmatik", "keterampilan merangkum bacaan", "penyuntingan teks"],
   },
   {
     expertise: "Literary Studies",
-    keywords: ["literary", "literature", "poetry", "prose", "drama", "novel"],
+    keywords: ["literary", "literature", "poetry", "prose", "drama", "novel", "pengantar ilmu sastra"],
+  },
+  {
+    expertise: "Philosophy",
+    keywords: ["sejarah pemikiran modern"],
   },
   {
     expertise: "English for Specific Purposes",
