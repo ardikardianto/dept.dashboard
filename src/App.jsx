@@ -44,7 +44,6 @@ const nav = [
 const dashboardPalette = ["#005baa", "#ffd23f", "#3d8bd6", "#f4b000", "#8fbbe8"];
 const DEFAULT_DEGREE_OPTIONS = ["M.A.", "M.Ed.", "Ph.D."];
 const DEFAULT_EXPERTISE_OPTIONS = [];
-let lecturerFormExpertiseOptions = DEFAULT_EXPERTISE_OPTIONS;
 
 const uniq = (items) => [...new Set(items.filter(Boolean))];
 const includes = (value, query) => String(value || "").toLowerCase().includes(String(query || "").toLowerCase());
@@ -262,6 +261,141 @@ function expertiseMatchesCourse(lecturer, course) {
     const expertise = String(item || "").trim().toLowerCase();
     return expertise && (courseText.includes(expertise) || expertise.includes(course.title.toLowerCase()));
   });
+}
+
+function getLecturerAutoPilotCapacity(lecturer) {
+  const currentLoad = Array.isArray(lecturer.plotted) ? lecturer.plotted.length : 0;
+  const availableSlots = Number(lecturer.available ?? 0);
+  return Math.min(LECTURER_CLASS_LIMIT, Math.max(0, currentLoad + (Number.isFinite(availableSlots) ? availableSlots : 0)));
+}
+
+function lecturerHasAutoPilotRisk(lecturer) {
+  return Boolean(String(lecturer.warning_note || "").trim()) || clampRating(lecturer.rating) === 2;
+}
+
+function buildAutoPilotCourseSlots(courses, classCounts, lecturers) {
+  return courses.flatMap((course) => Array.from({ length: classCounts[course.code] || 0 }, (_, index) => ({ course, index }))).sort((a, b) => {
+    const aMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, a.course)).length;
+    const bMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, b.course)).length;
+    return aMatches - bMatches || a.course.code.localeCompare(b.course.code) || a.index - b.index;
+  });
+}
+
+function buildAutoPilotPlotting(lecturers, courses, classCounts) {
+  const plannedCourses = courses.filter((course) => (classCounts[course.code] || 0) > 0);
+  const assignmentMap = Object.fromEntries(courses.map((course) => [course.code, Array.from({ length: classCounts[course.code] || 0 }, () => "")]));
+  const slots = buildAutoPilotCourseSlots(plannedCourses, classCounts, lecturers);
+  const assignmentExplanations = [];
+  const conflictWarningSet = new Set();
+  const states = lecturers.map((lecturer) => ({
+    lecturer,
+    assigned: 0,
+    capacity: getLecturerAutoPilotCapacity(lecturer),
+    rating: clampRating(lecturer.rating),
+    restricted: lecturerHasAutoPilotRisk(lecturer),
+  }));
+
+  const scoreCandidate = (state, course) => {
+    const expertiseScore = expertiseMatchesCourse(state.lecturer, course) ? 120 : 0;
+    const ratingScore = state.rating ? state.rating * 12 : 18;
+    const remainingCapacity = Math.max(0, state.capacity - state.assigned);
+    const currentCourseCount = (assignmentMap[course.code] || []).filter((id) => id === state.lecturer.id).length;
+    const warningPenalty = String(state.lecturer.warning_note || "").trim() ? 35 : 0;
+    const lowRatingPenalty = state.rating === 2 ? 30 : 0;
+    return expertiseScore + ratingScore + remainingCapacity * 8 + state.capacity * 3 - state.assigned * 26 - currentCourseCount * 14 - warningPenalty - lowRatingPenalty;
+  };
+
+  const chooseCandidate = (course, targetLimit, includeRestricted) => {
+    return states
+      .filter((state) => state.capacity > 0 && state.assigned < state.capacity && state.assigned < targetLimit && (includeRestricted || !state.restricted))
+      .map((state) => ({ state, score: scoreCandidate(state, course) }))
+      .sort((a, b) => b.score - a.score || a.state.assigned - b.state.assigned || b.state.rating - a.state.rating || a.state.lecturer.name.localeCompare(b.state.lecturer.name))[0]?.state || null;
+  };
+
+  const assignSlot = (slot, state, phaseLabel) => {
+    if (!state) return false;
+    const expertiseMatched = expertiseMatchesCourse(state.lecturer, slot.course);
+    const priorCourseCount = (assignmentMap[slot.course.code] || []).filter((id) => id === state.lecturer.id).length;
+    const warningNote = String(state.lecturer.warning_note || "").trim();
+    const warnings = [];
+    if (!expertiseMatched) {
+      warnings.push("No listed expertise match");
+      conflictWarningSet.add(`${slot.course.code}.${slot.index + 1} was assigned outside listed expertise to ${state.lecturer.name}.`);
+    }
+    if (!state.rating) {
+      warnings.push("No performance rating recorded");
+      conflictWarningSet.add(`${state.lecturer.name} has no performance rating; confirm suitability for ${slot.course.code}.${slot.index + 1}.`);
+    }
+    if (state.rating === 2) {
+      warnings.push("2-star rating used after eligible pass");
+      conflictWarningSet.add(`${state.lecturer.name} has a 2-star rating and was used only after eligible lecturers were considered.`);
+    }
+    if (warningNote) {
+      warnings.push(`Warning note: ${warningNote}`);
+      conflictWarningSet.add(`${state.lecturer.name} has a warning note and was used only after eligible lecturers were considered.`);
+    }
+    if (state.assigned + 1 >= state.capacity && state.capacity > 0) warnings.push("Lecturer reaches available/capacity limit");
+    assignmentMap[slot.course.code][slot.index] = state.lecturer.id;
+    assignmentExplanations.push({
+      id: `${slot.course.code}.${slot.index + 1}`,
+      courseCode: slot.course.code,
+      courseTitle: slot.course.title,
+      className: `${slot.course.code}.${slot.index + 1}`,
+      lecturerId: state.lecturer.id,
+      lecturerName: state.lecturer.name,
+      reasons: [
+        expertiseMatched ? "Expertise matches the course." : "Selected by rating, availability, and workload because no expertise match was available.",
+        state.rating ? `${state.rating}-star performance rating.` : "No performance rating recorded.",
+        `Capacity after assignment: ${state.assigned + 1}/${state.capacity}.`,
+        priorCourseCount ? `Already had ${priorCourseCount} class(es) for this course.` : "No duplicate class for this course before assignment.",
+        phaseLabel,
+      ],
+      warnings,
+    });
+    state.assigned += 1;
+    return true;
+  };
+
+  [1, 2].forEach((targetLimit) => {
+    slots.forEach((slot) => {
+      if (assignmentMap[slot.course.code][slot.index]) return;
+      assignSlot(slot, chooseCandidate(slot.course, targetLimit, false), `First distribution pass for up to ${targetLimit} class(es), excluding warning notes and 2-star ratings.`);
+    });
+  });
+
+  [3, 4].forEach((targetLimit) => {
+    slots.forEach((slot) => {
+      if (assignmentMap[slot.course.code][slot.index]) return;
+      assignSlot(slot, chooseCandidate(slot.course, targetLimit, true), `Additional distribution pass for up to ${targetLimit} class(es), using full scoring rules.`);
+    });
+  });
+
+  const assignedCount = Object.values(assignmentMap).reduce((sum, ids) => sum + ids.filter(Boolean).length, 0);
+  const plannedCount = slots.length;
+  const expertiseMatchCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => {
+    const lecturer = lecturers.find((item) => item.id === id);
+    return lecturer && expertiseMatchesCourse(lecturer, course);
+  }).length, 0);
+  const eligibleFirstPass = states.filter((state) => state.capacity > 0 && !state.restricted).length;
+  const restrictedLecturers = states.filter((state) => state.restricted);
+  const fullLecturers = states.filter((state) => state.assigned >= state.capacity && state.capacity > 0);
+  const unassignedByCourse = plannedCourses
+    .map((course) => ({ course, count: (assignmentMap[course.code] || []).filter((id) => !id).length }))
+    .filter((item) => item.count > 0);
+
+  const reviewNotes = [
+    `Auto-pilot assigned ${assignedCount} of ${plannedCount} planned classes with a ${LECTURER_CLASS_LIMIT}-class lecturer cap.`,
+    `First pass prioritized ${eligibleFirstPass} lecturers for up to 2 classes each, excluding lecturers with warning notes or 2-star ratings.`,
+    `Expertise matched ${expertiseMatchCount} assigned ${expertiseMatchCount === 1 ? "class" : "classes"}; remaining choices used rating, available capacity, and current plotted load.`,
+  ];
+  if (restrictedLecturers.length) reviewNotes.push(`${restrictedLecturers.length} lecturer(s) with warning notes or 2-star ratings were deprioritized for the first 2 classes: ${restrictedLecturers.map((state) => state.lecturer.name).join(", ")}.`);
+  if (fullLecturers.length) reviewNotes.push(`${fullLecturers.length} lecturer(s) reached their available/capacity limit: ${fullLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${state.capacity})`).join(", ")}.`);
+  if (unassignedByCourse.length) reviewNotes.push(`Manual review needed for unassigned classes: ${unassignedByCourse.map(({ course, count }) => `${course.code} ${course.title} (${count})`).join("; ")}.`);
+  unassignedByCourse.forEach(({ course, count }) => conflictWarningSet.add(`${course.code} ${course.title} still has ${count} unassigned planned class(es).`));
+  if (!plannedCount) reviewNotes.push("No planned classes were found. Set planned class counts before running auto-pilot.");
+
+  const conflictWarnings = Array.from(conflictWarningSet);
+  return { assignmentMap, reviewNotes, conflictWarnings, assignmentExplanations, assignedCount, plannedCount };
 }
 
 function buildPlottingExportRows(lecturers, courses, plannedCounts = {}, assignmentMap = null) {
@@ -494,6 +628,19 @@ function runTests() {
   console.assert(getCourseClassCounts(testLecturers, testCourses, { COURSE101: 3 }).COURSE101 === 3, "Planned class count should override assigned count when larger");
   console.assert(getCourseAssignmentMap(testLecturers, testCourses).COURSE101.length === 2, "Course assignment map should include each assigned class");
   console.assert(expertiseMatchesCourse(testLecturers[0], testCourses[0]), "Expertise should match course title");
+  const autoPilotLecturers = [
+    { ...testLecturers[0], id: "AUTO001", name: "Reading Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 5, warning_note: "" },
+    { ...testLecturers[1], id: "AUTO002", name: "Writing Expert", expertise: ["Writing"], plotted: [], available: 4, rating: 4, warning_note: "" },
+    { ...testLecturers[0], id: "AUTO003", name: "Low Rated Expert", expertise: ["Reading"], plotted: [], available: 4, rating: 2, warning_note: "" },
+    { ...testLecturers[1], id: "AUTO004", name: "Warning Expert", expertise: ["Writing"], plotted: [], available: 4, rating: 5, warning_note: "Review first" },
+  ];
+  const autoPilotResult = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 3 });
+  console.assert(autoPilotResult.assignedCount === 6, "Auto-pilot should assign all classes when capacity exists");
+  console.assert(countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO001") >= 2 && countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO002") >= 2, "Auto-pilot should distribute 2 classes first to eligible lecturers");
+  console.assert(autoPilotLecturers.every((lecturer) => countLecturerAssignments(autoPilotResult.assignmentMap, lecturer.id) <= LECTURER_CLASS_LIMIT), "Auto-pilot should respect the 4-class lecturer cap");
+  console.assert(autoPilotResult.reviewNotes.some((note) => note.includes("Auto-pilot assigned")), "Auto-pilot should provide admin review notes");
+  console.assert(autoPilotResult.assignmentExplanations.length === autoPilotResult.assignedCount, "Auto-pilot should explain each assigned class");
+  console.assert(autoPilotResult.conflictWarnings.length > 0, "Auto-pilot should surface warning-note and low-rating conflicts");
   const plottingRows = buildPlottingExportRows(testLecturers, testCourses, { COURSE101: 3 });
   console.assert(plottingRows.length === 4, "Plotting export should include planned classes and existing assignments");
   console.assert(plottingRows[0].Idtutor === "LECT001" && plottingRows[0].Kelas === "COURSE101.1" && plottingRows[0]["Nama MK"] === "Basic Reading", "Plotting export should match the Excel plotting schema");
@@ -1040,11 +1187,6 @@ function SelectBox({ label, value, onChange, options = [] }) {
 
 const filterOptionLabel = (option) => String(option) === "id" ? "ID" : String(option).replace(/\b\w/g, (char) => char.toUpperCase());
 
-function FilterButtonGroup({ label, value, onChange, options = [], includeAll = true }) {
-  const items = uniq([...(includeAll ? ["All"] : []), ...options]);
-  return <div className="space-y-2"><p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">{label}</p><div className="flex flex-wrap gap-2">{items.map((option) => { const selected = String(value) === String(option); return <button key={option} type="button" onClick={() => onChange?.(option)} className={`rounded-full border px-3 py-2 text-sm font-medium transition ${selected ? "border-[#005baa] bg-[#005baa] text-white shadow-sm" : "border-[#d7e6f7] bg-white text-[#315577] hover:border-[#9bbfe8]"}`}>{filterOptionLabel(option)}</button>; })}</div></div>;
-}
-
 function NativeFilterIconSelect({ label, value, onChange, options = [], includeAll = true, icon: Icon }) {
   const items = uniq([...(includeAll ? ["All"] : []), ...options]);
   return <span className={`mobile-native-filter-select ${String(value) !== "All" ? "is-active" : ""}`} title={label} aria-label={label}>{Icon && <Icon className="h-4 w-4" />}<select aria-label={label} value={value} onChange={(event) => onChange?.(event.target.value)}>{items.map((option) => <option key={option} value={option}>{filterOptionLabel(option)}</option>)}</select></span>;
@@ -1333,9 +1475,8 @@ function Dashboard({ lecturers, courses }) {
   return <div className="space-y-6"><Card className="dashboard-filter-card p-5"><p className="mb-4 text-xs font-medium uppercase tracking-[0.2em] text-[#005baa]">Filter Infographics</p>{filterControls}</Card><div className={`mobile-filter-fab ${mobileFiltersVisible ? "is-visible" : "is-hidden"} ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle filter infographics"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Stat label="Total Lecturers" value={filtered.length} icon={Icons.users} /><Stat label="Total Plotted Courses" value={filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0)} icon={Icons.book} note="Filtered result" /><Stat label="Total Available Slots" value={filtered.reduce((sum, lecturer) => sum + lecturer.available, 0)} icon={Icons.chart} /><Stat label="Avg. Plotted Course / Lecturer" value={filtered.length ? (filtered.reduce((sum, lecturer) => sum + lecturer.plotted.length, 0) / filtered.length).toFixed(1) : "0"} icon={Icons.check} tone="amber" note="Range 0–4" /></div><div className="grid gap-6 md:grid-cols-2"><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Academic Degree</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={degreeData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{degreeData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5"><h3 className="font-medium text-[#102f52]">By Number of Plotted Courses</h3><div className="h-72"><ResponsiveContainer><RePieChart><Pie data={plottedCountData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={95}>{plottedCountData.map((_, index) => <Cell key={index} fill={dashboardPalette[index % dashboardPalette.length]} />)}</Pie><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /></RePieChart></ResponsiveContainer></div></Card><Card className="p-5 md:col-span-2"><h3 className="font-medium text-[#102f52]">By Course Expertise</h3><div className="h-72"><ResponsiveContainer><BarChart data={expertiseData} layout="vertical"><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis type="number" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis dataKey="name" type="category" width={155} tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Bar dataKey="value" fill="#005baa" radius={[0, 8, 8, 0]} /></BarChart></ResponsiveContainer></div></Card></div><Card className="p-5"><h3 className="font-medium text-[#102f52]">Lecturer Load and Availability</h3><div className="h-80"><ResponsiveContainer><BarChart data={availableData}><CartesianGrid stroke="#d7e6f7" strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><YAxis tick={{ fontSize: 11, fill: "#315577", fontWeight: 300 }} /><Tooltip contentStyle={{ fontWeight: 300 }} /><Legend wrapperStyle={{ fontWeight: 300 }} /><Bar dataKey="plotted" fill="#005baa" radius={[8, 8, 0, 0]} /><Bar dataKey="available" fill="#ffd23f" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></div></Card></div>;
 }
 
-function LecturerForm({ initial, onSave, onClose }) {
+function LecturerForm({ initial, onSave, onClose, expertiseOptions = DEFAULT_EXPERTISE_OPTIONS }) {
   const degreeOptions = initial?.degreeOptions || DEFAULT_DEGREE_OPTIONS;
-  const expertiseOptions = initial?.expertiseOptions || lecturerFormExpertiseOptions;
   const [form, setForm] = useState(() => {
     const base = initial || { id: String(Date.now()).slice(-8), degree: "M.A.", name: "", email: "", phone: "", plotted: [], available: 0, rating: 0, warning_note: "" };
     return { ...base, degree: degreeOptions.includes(base.degree) ? base.degree : degreeOptions[0], expertise: Array.isArray(base.expertise) ? base.expertise : splitList(base.expertiseText), rating: clampRating(base.rating), warning_note: String(base.warning_note || "") };
@@ -1370,7 +1511,6 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
   const mobileSearchInputRef = useRef(null);
   const directoryById = useMemo(() => new Map(directoryLecturers.map((lecturer) => [lecturer.id, lecturer])), [directoryLecturers]);
   const expertiseOptions = useMemo(() => uniq([...directoryLecturers, ...lecturers].flatMap((lecturer) => lecturer.expertise)), [directoryLecturers, lecturers]);
-  lecturerFormExpertiseOptions = expertiseOptions;
   const sortBy = (value) => {
     setSortDirection((current) => sort === value ? current === "asc" ? "desc" : "asc" : "asc");
     setSort(value);
@@ -1461,7 +1601,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setMobileSearchOpen(true);
   };
   const remove = (id) => setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
-  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, warning, rating, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("Rating", "rating")}</th><th className="px-4 py-4 font-medium">Notice</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4"><RatingStars rating={lecturer.rating} onChange={(rating) => rateLecturer(lecturer.id, rating)} /></td><td className="px-4 py-4"><WarningNotice note={lecturer.warning_note} /></td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} onRatingChange={(rating) => rateLecturer(viewing.id, rating)} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, warning, rating, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("Rating", "rating")}</th><th className="px-4 py-4 font-medium">Notice</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4"><RatingStars rating={lecturer.rating} onChange={(rating) => rateLecturer(lecturer.id, rating)} /></td><td className="px-4 py-4"><WarningNotice note={lecturer.warning_note} /></td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} onRatingChange={(rating) => rateLecturer(viewing.id, rating)} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} expertiseOptions={expertiseOptions} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseClassPlans, setCourseClassPlans }) {
@@ -1473,6 +1613,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const [lecturerHeaderSortDirection, setLecturerHeaderSortDirection] = useState("asc");
   const [lecturerPlottedFilter, setLecturerPlottedFilter] = useState("All");
   const [importMessage, setImportMessage] = useState("");
+  const [autoPilotReview, setAutoPilotReview] = useState(null);
   const [selectedCourseCode, setSelectedCourseCode] = useState("");
   const [selectedLecturerId, setSelectedLecturerId] = useState("");
   const plannedCounts = useMemo(() => getCourseClassPlan(courseClassPlans, selectedTermCode), [courseClassPlans, selectedTermCode]);
@@ -1504,6 +1645,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
   const selectedLecturerCourseCounts = useMemo(() => Object.fromEntries(getPlottedCourseCounts(selectedLecturer?.plotted || []).map(({ code, count }) => [code, count])), [selectedLecturer]);
   const updateCoursePlan = (code, value) => {
     const count = toClassCount(value);
+    setAutoPilotReview(null);
     setCourseClassPlans((prev) => {
       const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
       return { ...prev, [selectedTermCode]: { counts: { ...counts, [code]: count }, assignments: { ...assignments, [code]: assignments[code] || assignmentMap[code] || [] } } };
@@ -1516,6 +1658,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
     if (lecturerId && lecturerId !== currentLecturerId && countLecturerAssignments(assignmentMap, lecturerId) >= LECTURER_CLASS_LIMIT) return;
     nextCourseAssignments[classIndex] = lecturerId;
     const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
+    setAutoPilotReview(null);
     setCourseClassPlans((prev) => {
       const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
       return { ...prev, [selectedTermCode]: { counts: { ...counts, [courseCode]: Math.max(toClassCount(counts[courseCode]), count) }, assignments: { ...assignments, [courseCode]: nextCourseAssignments } } };
@@ -1559,6 +1702,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
     }
 
     const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
+    setAutoPilotReview(null);
     setCourseClassPlans((prev) => {
       const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
       return { ...prev, [selectedTermCode]: { counts: { ...counts, [courseCode]: Math.max(toClassCount(counts[courseCode]), nextCourseAssignments.length) }, assignments: { ...assignments, [courseCode]: nextCourseAssignments } } };
@@ -1569,6 +1713,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
     const file = event.target.files?.[0];
     if (!file) return;
     setImportMessage("");
+    setAutoPilotReview(null);
     try {
       if (!selectedTermCode) throw new Error("Create or select a term before importing plotting data.");
       const rawRows = file.name.toLowerCase().endsWith(".csv") ? rowsToObjects(parseCSV(await file.text())) : await parseXLSX(file);
@@ -1594,7 +1739,27 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
       event.target.value = "";
     }
   };
+  const runAutoPilot = () => {
+    if (!selectedTermCode) {
+      setAutoPilotReview({ notes: ["Create or select a term before running auto-pilot plotting."], warnings: [], explanations: [] });
+      return;
+    }
+    const result = buildAutoPilotPlotting(lecturers, courses, classCounts);
+    const nextCounts = Object.fromEntries(courses.map((course) => [course.code, classCounts[course.code] || 0]));
+    setCourseClassPlans((prev) => {
+      const { counts } = getCoursePlanParts(prev, selectedTermCode);
+      return { ...prev, [selectedTermCode]: { counts: { ...counts, ...nextCounts }, assignments: result.assignmentMap } };
+    });
+    setLecturers((prev) => applyCourseAssignmentsToLecturers(prev, courses, result.assignmentMap));
+    setAutoPilotReview({ notes: result.reviewNotes, warnings: result.conflictWarnings, explanations: result.assignmentExplanations });
+    const firstAssignedCourseCode = courses.find((course) => result.assignmentMap[course.code]?.some(Boolean))?.code || "";
+    if (firstAssignedCourseCode) setSelectedCourseCode(firstAssignedCourseCode);
+    setImportMessage("");
+  };
   const lecturerOptionsForCourse = (course) => [...lecturers].sort((a, b) => Number(expertiseMatchesCourse(b, course)) - Number(expertiseMatchesCourse(a, course)) || a.name.localeCompare(b.name));
+  const autoPilotNotes = autoPilotReview?.notes || [];
+  const autoPilotWarnings = autoPilotReview?.warnings || [];
+  const autoPilotExplanations = autoPilotReview?.explanations || [];
   return (
     <div className="space-y-5">
       <Card className="p-4">
@@ -1617,6 +1782,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
             <span className="block text-[10px] font-medium uppercase tracking-[0.18em] text-transparent">Actions</span>
             <div className="flex flex-wrap gap-3">
               <input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} />
+              <Button className="h-12 whitespace-nowrap px-4" onClick={runAutoPilot} disabled={!plannedTotal}><Icons.check className="h-4 w-4" />Run auto-pilot</Button>
               <Button variant="secondary" className="h-12 whitespace-nowrap px-4" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import plotting</Button>
               <Button variant="secondary" className="h-12 whitespace-nowrap px-4" onClick={() => exportPlottingToXLSX(lecturers, courses, plannedCounts, assignmentMap)} disabled={!plannedTotal}><Icons.download className="h-4 w-4" />Export plotting XLSX</Button>
             </div>
@@ -1629,6 +1795,53 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
         <Stat label="Assigned Classes" value={assignedTotal} icon={Icons.check} tone={assignedTotal === plannedTotal && plannedTotal ? "amber" : "blue"} />
         <Stat label="Unassigned Classes" value={Math.max(0, plannedTotal - assignedTotal)} icon={Icons.users} />
       </div>
+      {autoPilotNotes.length > 0 && (
+        <Card className="p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#005baa]">Auto-pilot review</p>
+              <h3 className="mt-1 text-lg font-medium text-[#26353f]">Admin notes for this plotting run</h3>
+            </div>
+            <Badge tone={assignedTotal === plannedTotal && plannedTotal ? "green" : "amber"}>{assignedTotal} / {plannedTotal} assigned</Badge>
+          </div>
+          <ul className="mt-4 space-y-2 text-sm leading-6 text-[#4f6478]">
+            {autoPilotNotes.map((note) => <li key={note} className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] px-3 py-2">{note}</li>)}
+          </ul>
+          <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.35fr]">
+            <div className="rounded-xl border border-[#f3dda2] bg-[#fff9df] p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#71540f]">Conflict warnings</p>
+              {autoPilotWarnings.length ? (
+                <ul className="mt-3 space-y-2 text-sm leading-6 text-[#71540f]">
+                  {autoPilotWarnings.map((warning) => <li key={warning} className="rounded-lg bg-white/70 px-3 py-2">{warning}</li>)}
+                </ul>
+              ) : (
+                <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-sm leading-6 text-[#315f45]">No conflict warnings detected for this auto-pilot run.</p>
+              )}
+            </div>
+            <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#315577]">Assignment explanations</p>
+              {autoPilotExplanations.length ? (
+                <div className="mt-3 grid max-h-96 gap-3 overflow-y-auto pr-1">
+                  {autoPilotExplanations.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-[#26353f]">{item.className} - {item.courseTitle}</p>
+                        <Badge tone={item.warnings.length ? "amber" : "green"}>{item.lecturerName} ({item.lecturerId})</Badge>
+                      </div>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-[#4f6478]">
+                        {item.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                      </ul>
+                      {item.warnings.length > 0 && <p className="mt-2 rounded-lg bg-[#fff0c2] px-2 py-1 text-xs leading-5 text-[#71540f]">{item.warnings.join("; ")}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-lg bg-[#f7fbf6] px-3 py-2 text-sm leading-6 text-[#4f6478]">No assignments were generated to explain.</p>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
       {plottingMode === "course" ? (
         <Card className="overflow-hidden">
           <div className="border-b border-[#dce9e6] p-5">
@@ -2097,11 +2310,19 @@ export default function App() {
   }, [applyDatabaseSnapshot, setHydrated]);
 
   useEffect(() => {
-    if (entryMode === "public") loadPublicDirectory();
+    if (entryMode !== "public") return undefined;
+    const timer = window.setTimeout(() => {
+      loadPublicDirectory();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [entryMode, loadPublicDirectory]);
 
   useEffect(() => {
-    if (!userEmail && entryMode === "admin") setEntryMode("login");
+    if (userEmail || entryMode !== "admin") return undefined;
+    const timer = window.setTimeout(() => {
+      setEntryMode("login");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [entryMode, setEntryMode, userEmail]);
 
   useEffect(() => {
