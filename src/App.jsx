@@ -1541,6 +1541,18 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
       return applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap);
     });
   };
+  const clearCourseAssignments = (courseCode) => {
+    const count = classCounts[courseCode] || 0;
+    const nextCourseAssignments = Array.from({ length: count }, () => "");
+    const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
+    setAutoPilotReview(null);
+    setImportMessage("");
+    setCourseClassPlans((prev) => {
+      const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
+      return { ...prev, [selectedTermCode]: { counts: { ...counts, [courseCode]: Math.max(toClassCount(counts[courseCode]), count) }, assignments: { ...assignments, [courseCode]: nextCourseAssignments } } };
+    });
+    setLecturers((prev) => applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap));
+  };
   const setLecturerCourseCount = (courseCode, value, lecturerId = selectedLecturer?.id) => {
     if (!lecturerId) return;
     const currentAssignments = assignmentMap[courseCode] || [];
@@ -1783,6 +1795,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                     </button>
                     <div className="flex flex-wrap items-center gap-3">
                       <Badge tone={assigned >= planned && planned ? "green" : planned ? "amber" : "slate"}>{assigned} / {planned}</Badge>
+                      <Button variant="danger" onClick={() => clearCourseAssignments(course.code)} disabled={!assigned}>Clear</Button>
                       <Button variant="secondary" onClick={() => setSelectedCourseCode(selected ? "" : course.code)}>{selected ? "Close" : "Plot"}</Button>
                     </div>
                   </div>
