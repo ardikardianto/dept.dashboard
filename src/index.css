@@ -494,6 +494,23 @@ html {
     justify-content: flex-start;
   }
 
+  .mobile-card-table td > span,
+  .mobile-card-table .rating-stars {
+    width: fit-content;
+    max-width: 100%;
+    justify-self: start;
+    align-self: start;
+  }
+
+  .mobile-card-table .rating-stars {
+    flex-wrap: nowrap;
+  }
+
+  .mobile-card-table .rating-stars button {
+    min-height: auto;
+    min-width: auto;
+  }
+
   .mobile-card-table button {
     min-height: 2.25rem;
     min-width: 2.25rem;
