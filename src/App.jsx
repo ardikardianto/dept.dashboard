@@ -1105,81 +1105,112 @@ function FloatingBottomNav({ active, setActive, onLogout }) {
 }
 
 function LandingScreen({ onPublicMode, onLoginMode }) {
+  const ease = [0.22, 1, 0.36, 1];
   return (
-    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
-      <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
-        <motion.nav
-          initial={{ opacity: 0, y: -18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
+    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
+        <motion.header
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease }}
+          className="flex flex-wrap items-center justify-between gap-4 py-6"
         >
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
-              <Icons.graduation className="h-6 w-6" />
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+              <Icons.graduation className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
+            <div className="leading-tight">
+              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
+              <p className="text-xs text-[#6f8aa3]">English Department</p>
             </div>
           </div>
-          <div className="flex items-center rounded-full bg-[#eef5ff] p-1 text-sm font-black">
-            <button type="button" onClick={onPublicMode} className="rounded-full bg-[#ffd23f] px-4 py-2 text-[#102f52] shadow-sm sm:px-5">Public Mode</button>
-            <button type="button" onClick={onLoginMode} className="rounded-full px-5 py-2 text-[#315577] hover:bg-white sm:px-6">Login Mode</button>
-          </div>
-        </motion.nav>
+          <nav className="flex items-center gap-1">
+            <button type="button" onClick={onPublicMode} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa]">
+              Tutor search
+            </button>
+            <button type="button" onClick={onLoginMode} className="rounded-lg bg-[#005baa] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#004984]">
+              Sign in
+            </button>
+          </nav>
+        </motion.header>
 
-        <main className="relative mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-16">
+        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-4">
           <motion.section
-            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            className="max-w-3xl"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.08, ease }}
           >
-            <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Portal</p>
-            <h1 className="mt-4 text-5xl font-black leading-[0.96] tracking-tight text-[#102f52] sm:text-6xl lg:text-7xl">
-              UT English Dept.
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#d7e6f7] bg-white px-3 py-1 text-xs font-medium text-[#6f8aa3]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
+              Lecturer portal
+            </span>
+            <h1 className="mt-6 font-serif text-[2.6rem] font-medium leading-[1.05] tracking-[-0.02em] text-[#102f52] sm:text-5xl lg:text-6xl">
+              The people and classes behind the English Department.
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4f6478]">
-              Tutors can view their current profile by ID, while administrators can sign in to manage the department dashboard.
+            <p className="mt-6 max-w-md text-base leading-7 text-[#44607a]">
+              Tutors can view their profile by ID, while administrators sign in to manage lecturers, courses, and term plotting from one dashboard.
             </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="flex flex-col gap-3">
-                <Button onClick={onPublicMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.eye className="h-5 w-5" />Public Mode</Button>
-                <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#d7e6f7] bg-white px-4 py-2.5 text-sm font-semibold text-[#102f52] transition hover:bg-[#f4f9ff] !rounded-2xl px-6 py-3 text-base"><Icons.file className="h-5 w-5" />Tutor Data Form</a>
-              </div>
-              <Button variant="secondary" onClick={onLoginMode} className="!rounded-2xl px-6 py-3 text-base"><Icons.dashboard className="h-5 w-5" />Login Mode</Button>
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={onPublicMode} className="inline-flex items-center gap-2 rounded-xl bg-[#005baa] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#004984]">
+                <Icons.search className="h-4 w-4" />
+                Look up a tutor
+              </button>
             </div>
+            <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-[#6f8aa3] underline-offset-4 transition hover:text-[#102f52] hover:underline">
+              <Icons.file className="h-4 w-4" />
+              New tutor? Fill in the data form
+            </a>
           </motion.section>
 
           <motion.section
-            initial={{ opacity: 0, y: 28, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.72, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-[2rem] border border-[#d7e6f7] bg-[#f7fbff] p-5 shadow-[0_28px_90px_rgba(0,91,170,0.10)] sm:p-7"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2, ease }}
+            className="relative"
           >
-            <div className="grid gap-4">
-              <div className="rounded-2xl bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <span className="rounded-xl bg-[#eef5ff] p-3 text-[#005baa]"><Icons.search /></span>
+            <div className="rounded-2xl border border-[#d7e6f7] bg-white p-2 shadow-[0_1px_2px_rgba(20,20,19,0.04),0_18px_40px_-20px_rgba(20,20,19,0.22)]">
+              <div className="rounded-xl border border-[#e3edf8] bg-[#eff5fc] p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium uppercase tracking-[0.14em] text-[#93a7bc]">Tutor profile</span>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#3F8A5E]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#3F8A5E]" />
+                    Available
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#d7e6f7] text-sm font-semibold text-[#44607a]">AP</span>
                   <div>
-                    <p className="font-black text-[#102f52]">Public Mode</p>
-                    <p className="mt-1 text-sm leading-6 text-[#4f6478]">Tutor ID profile lookup</p>
+                    <p className="font-semibold text-[#102f52]">Alya Prameswari</p>
+                    <p className="text-sm text-[#6f8aa3]">Ph.D. · English Linguistics</p>
                   </div>
                 </div>
-              </div>
-              <div className="rounded-2xl bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <span className="rounded-xl bg-[#fff0c2] p-3 text-[#71540f]"><Icons.dashboard /></span>
-                  <div>
-                    <p className="font-black text-[#102f52]">Login Mode</p>
-                    <p className="mt-1 text-sm leading-6 text-[#4f6478]">Admin dashboard access</p>
+                <dl className="mt-5 space-y-3 text-sm">
+                  <div className="flex items-center justify-between border-t border-[#e3edf8] pt-3">
+                    <dt className="text-[#6f8aa3]">Tutor ID</dt>
+                    <dd className="font-mono text-[#2f4a63]">D001</dd>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-[#6f8aa3]">Plotted courses</dt>
+                    <dd className="text-[#2f4a63]">2</dd>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-[#6f8aa3]">Open slots</dt>
+                    <dd className="text-[#2f4a63]">4 of 4</dd>
+                  </div>
+                </dl>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className="rounded-md bg-[#e6eff9] px-2.5 py-1 text-xs text-[#44607a]">English Linguistics</span>
+                  <span className="rounded-md bg-[#e6eff9] px-2.5 py-1 text-xs text-[#44607a]">Language Teaching</span>
                 </div>
               </div>
             </div>
+            <p className="mt-3 text-center text-xs text-[#93a7bc]">An example public lookup result</p>
           </motion.section>
         </main>
+
+        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+          © 2026 Universitas Terbuka — English Department
+        </footer>
       </div>
     </div>
   );
@@ -1210,89 +1241,209 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
   };
 
   return (
-    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
-      <div className="mx-auto max-w-7xl">
-        <motion.nav
-          initial={{ opacity: 0, y: -18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
+    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
+        <motion.header
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-wrap items-center justify-between gap-4 py-6"
         >
-          <button type="button" onClick={onBack} className="flex items-center gap-3 text-left">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
-              <Icons.graduation className="h-6 w-6" />
+          <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+              <Icons.graduation className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
+            <div className="leading-tight">
+              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
+              <p className="text-xs text-[#6f8aa3]">English Department</p>
             </div>
           </button>
-          <div className="flex flex-wrap items-center gap-2 rounded-full bg-[#eef5ff] p-1 text-sm font-black">
-            <SupabaseStatusIcon connected={isHydrated} label={dbStatus} />
-            <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-full px-4 py-2 text-[#315577] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-5">Refresh</button>
-            <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">Public Mode</button>
-            <button type="button" onClick={onLogin} className="rounded-full px-5 py-2 text-[#315577] hover:bg-white sm:px-6">Login Mode</button>
-          </div>
-        </motion.nav>
+          <nav className="flex flex-wrap items-center gap-1.5">
+            <span title={dbStatus} role="status" className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${isHydrated ? "border-[#CBE0CF] bg-[#EAF3EC] text-[#3F8A5E]" : "border-[#E8DDC0] bg-[#F6EFD9] text-[#8A6D2F]"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${isHydrated ? "bg-[#3F8A5E]" : "bg-[#C79A3A]"}`} />
+              {isHydrated ? "Connected" : "Connecting"}
+            </span>
+            <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa] disabled:cursor-not-allowed disabled:opacity-50">Refresh</button>
+            <button type="button" onClick={onLogin} className="rounded-lg bg-[#005baa] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#004984]">Sign in</button>
+          </nav>
+        </motion.header>
 
-        <main className="relative mx-auto grid w-full max-w-6xl gap-8 py-10 lg:grid-cols-[0.95fr_1.05fr] lg:py-14">
-          <section>
-            <p className="text-xs font-black uppercase tracking-[0.35em] text-[#005baa]">Lecturer Profile</p>
-            <h1 className="mt-3 text-4xl font-black tracking-tight text-[#102f52] sm:text-5xl">Find tutor by ID</h1>
-            <form onSubmit={submit} className="mt-7 space-y-4">
-              <TextInput icon={Icons.search} value={idInput} onChange={setIdInput} placeholder="Enter tutor ID" />
+        <main className="grid flex-1 items-start gap-12 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#d7e6f7] bg-white px-3 py-1 text-xs font-medium text-[#6f8aa3]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
+              Lecturer profile
+            </span>
+            <h1 className="mt-6 font-serif text-[2.2rem] font-medium leading-[1.08] tracking-[-0.02em] text-[#102f52] sm:text-4xl">
+              Find a tutor by ID.
+            </h1>
+            <p className="mt-4 max-w-sm text-base leading-7 text-[#44607a]">
+              Enter a tutor's ID to see their public profile, expertise, and current teaching availability.
+            </p>
+            <form onSubmit={submit} className="mt-8 space-y-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-[#6f8aa3]">Tutor ID</span>
+                <div className="flex h-12 items-center gap-2.5 rounded-xl border border-[#ccdcef] bg-white px-3.5 transition focus-within:border-[#005baa]">
+                  <Icons.search className="h-4 w-4 text-[#93a7bc]" />
+                  <input value={idInput} onChange={(event) => setIdInput(event.target.value)} placeholder="e.g. D001" className="w-full bg-transparent text-sm text-[#102f52] outline-none placeholder:text-[#9db1c6]" />
+                </div>
+              </label>
               {terms.length > 0 && (
                 <label className="block space-y-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#315577]">Term</span>
+                  <span className="text-xs font-medium text-[#6f8aa3]">Term</span>
                   <div className="relative">
-                    <select value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="w-full appearance-none rounded-xl border border-[#d7e6f7] bg-white px-3 py-2.5 pr-9 text-sm font-normal text-[#102f52] outline-none focus:border-[#005baa]">
+                    <select value={termSelectValue} onChange={(event) => setSelectedTermCode(event.target.value)} className="w-full appearance-none rounded-xl border border-[#ccdcef] bg-white px-3.5 py-2.5 pr-9 text-sm text-[#102f52] outline-none transition focus:border-[#005baa]">
                       {terms.map((term) => <option key={term.code} value={term.code}>{term.name}</option>)}
                     </select>
-                    <Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6f90af]" />
+                    <Icons.chevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#93a7bc]" />
                   </div>
                 </label>
               )}
-              <Button type="submit" className="w-full !rounded-2xl py-3 text-base" disabled={!idInput.trim() || !isHydrated}>View Profile</Button>
+              <button type="submit" disabled={!idInput.trim() || !isHydrated} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#005baa] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#004984] disabled:cursor-not-allowed disabled:opacity-50">
+                View profile
+              </button>
             </form>
             {isHydrated && !publicDirectoryEmpty && (
-              <p className="mt-4 text-sm leading-6 text-[#4f6478]">{termScopedLecturers.length} public {termScopedLecturers.length === 1 ? "profile" : "profiles"} loaded{effectiveTermCode ? " for the selected term" : ""}.</p>
+              <p className="mt-4 text-sm text-[#6f8aa3]">{termScopedLecturers.length} public {termScopedLecturers.length === 1 ? "profile" : "profiles"} loaded{effectiveTermCode ? " for the selected term" : ""}.</p>
             )}
-          </section>
+          </motion.section>
 
-          <section>
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
             {!USE_SUPABASE && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">Supabase is not configured.</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable public profile lookup.</p>
-              </Card>
+              <PublicNotice title="Supabase is not configured" tone="error">
+                Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable public profile lookup.
+              </PublicNotice>
             )}
             {USE_SUPABASE && !isHydrated && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">{dbStatus}</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Profile lookup will be available once the public directory is loaded.</p>
-              </Card>
+              <PublicNotice title={dbStatus} tone="warn">
+                Profile lookup will be available once the public directory is loaded.
+              </PublicNotice>
             )}
             {USE_SUPABASE && isHydrated && !submitted && !publicDirectoryEmpty && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">Ready</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">Enter a tutor ID to view the matching profile.</p>
-              </Card>
+              <PublicNotice title="Ready when you are">
+                Enter a tutor ID on the left to view the matching profile.
+              </PublicNotice>
             )}
             {publicDirectoryEmpty && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">No public profiles loaded</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">The public lookup can reach Supabase, but the public_lecturer_profiles view returned zero rows. Run the public profile views SQL, or sign in through Login Mode to confirm lecturer data exists.</p>
-              </Card>
+              <PublicNotice title="No public profiles loaded" tone="warn">
+                The public lookup can reach Supabase, but the public_lecturer_profiles view returned zero rows. Run the public profile views SQL, or sign in to confirm lecturer data exists.
+              </PublicNotice>
             )}
             {USE_SUPABASE && isHydrated && submitted && !lecturer && !publicDirectoryEmpty && (
-              <Card className="p-6">
-                <p className="font-black text-[#102f52]">No profile found</p>
-                <p className="mt-2 text-sm leading-6 text-[#4f6478]">No tutor profile matches that ID. Check the full tutor ID and try again.</p>
-              </Card>
+              <PublicNotice title="No profile found" tone="error">
+                No tutor profile matches that ID. Check the full tutor ID and try again.
+              </PublicNotice>
             )}
-            {USE_SUPABASE && isHydrated && lecturer && <LecturerInfoCard lecturer={lecturer} courses={courses} />}
-          </section>
+            {USE_SUPABASE && isHydrated && lecturer && <PublicProfileCard lecturer={lecturer} courses={courses} />}
+          </motion.section>
         </main>
+
+        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+          © 2026 Universitas Terbuka — English Department
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function PublicNotice({ title, children, tone = "muted" }) {
+  const dot = { muted: "#93a7bc", warn: "#C79A3A", error: "#B0492E" }[tone] || "#93a7bc";
+  return (
+    <div className="rounded-2xl border border-[#d7e6f7] bg-white p-6">
+      <div className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dot }} />
+        <p className="font-medium text-[#102f52]">{title}</p>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-[#44607a]">{children}</p>
+    </div>
+  );
+}
+
+const CHIP_TONES = [
+  { bg: "#e3edfb", text: "#1d4e89", border: "#cadcf4" }, // blue
+  { bg: "#fbeccb", text: "#86610f", border: "#f0dca6" }, // gold
+  { bg: "#d9f0e3", text: "#1f6b4c", border: "#bfe5d0" }, // green
+  { bg: "#ece7fb", text: "#4a3da0", border: "#dad2f3" }, // indigo
+  { bg: "#fce0e7", text: "#9f3454", border: "#f6cbd6" }, // rose
+  { bg: "#d6eef5", text: "#1a6982", border: "#bfe2ec" }, // cyan
+  { bg: "#fbe5d6", text: "#9a4a1f", border: "#f3d2bd" }, // terracotta
+];
+const EXPERTISE_TONE_INDEX = {
+  "english linguistics": 0,
+  "english language teaching": 2,
+  "translation studies": 1,
+  "indonesian linguistics": 5,
+  "literary studies": 4,
+  philosophy: 3,
+};
+function chipTone(label) {
+  const key = String(label || "").trim().toLowerCase();
+  if (key in EXPERTISE_TONE_INDEX) return CHIP_TONES[EXPERTISE_TONE_INDEX[key]];
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return CHIP_TONES[hash % CHIP_TONES.length];
+}
+
+function PublicProfileCard({ lecturer, courses }) {
+  const available = Number(lecturer.available ?? 0);
+  const availColor = available > 0 ? "#3F8A5E" : "#B0492E";
+  const initials = lecturer.name.split(" ").filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "—";
+  const hasContact = Boolean(lecturer.email || lecturer.phone);
+  const warning = String(lecturer.warning_note || "").trim();
+  return (
+    <div className="rounded-2xl border border-[#d7e6f7] bg-white p-2 shadow-[0_1px_2px_rgba(20,20,19,0.04),0_18px_40px_-20px_rgba(20,20,19,0.22)]">
+      <div className="rounded-xl border border-[#e3edf8] bg-[#eff5fc] p-5 sm:p-6">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-[0.14em] text-[#93a7bc]">Tutor profile</span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: availColor }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: availColor }} />
+            {available} {available === 1 ? "open slot" : "open slots"}
+          </span>
+        </div>
+        <div className="mt-4 flex items-center gap-3.5">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#d7e6f7] text-sm font-semibold text-[#44607a]">{initials}</span>
+          <div className="min-w-0">
+            <p className="truncate font-serif text-xl font-medium text-[#102f52]">{lecturer.name}</p>
+            <p className="text-sm text-[#6f8aa3]">{lecturer.degree} · ID <span className="font-mono">{lecturer.id}</span></p>
+          </div>
+        </div>
+        {(lecturer.rating > 0 || warning) && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {lecturer.rating > 0 && <RatingStars rating={lecturer.rating} />}
+            {warning && (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#E7C9A3] bg-[#FBF1E3] px-2.5 py-1 text-xs font-medium text-[#9A6A2B]" title={warning}>
+                <Icons.warning className="h-3.5 w-3.5 shrink-0" />
+                <span className="max-w-[14rem] truncate">{warning}</span>
+              </span>
+            )}
+          </div>
+        )}
+        {hasContact && (
+          <dl className="mt-5 space-y-3 border-t border-[#e3edf8] pt-4 text-sm">
+            {lecturer.email && <div className="flex items-center justify-between gap-4"><dt className="text-[#6f8aa3]">Email</dt><dd className="truncate text-[#2f4a63]">{lecturer.email}</dd></div>}
+            {lecturer.phone && <div className="flex items-center justify-between gap-4"><dt className="text-[#6f8aa3]">Phone</dt><dd className="text-[#2f4a63]">{lecturer.phone}</dd></div>}
+          </dl>
+        )}
+        <div className="mt-5 border-t border-[#e3edf8] pt-4">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#93a7bc]">Expertise</p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {lecturer.expertise.length ? lecturer.expertise.map((item) => { const tone = chipTone(item); return <span key={item} style={{ backgroundColor: tone.bg, color: tone.text, borderColor: tone.border }} className="rounded-md border px-2.5 py-1 text-xs font-medium">{item}</span>; }) : <span className="text-sm text-[#93a7bc]">No expertise listed</span>}
+          </div>
+        </div>
+        <div className="mt-4 border-t border-[#e3edf8] pt-4">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#93a7bc]">Plotted courses</p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {lecturer.plotted.length ? getPlottedCourseCounts(lecturer.plotted).map(({ code, count }, index) => { const tone = CHIP_TONES[index % CHIP_TONES.length]; return <span key={code} style={{ backgroundColor: tone.bg, color: tone.text, borderColor: tone.border }} className="rounded-md border px-2.5 py-1 text-xs font-medium">{courseTitleByCode(courses, code)}{count > 1 ? ` ×${count}` : ""}</span>; }) : <span className="text-sm text-[#93a7bc]">No plotted courses</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2030,109 +2181,101 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
     onDemoLogin();
   };
   return (
-    <div className="min-h-screen bg-white px-5 py-5 text-[#102f52] sm:px-8 lg:px-12">
-      <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-7xl flex-col">
-        <motion.nav
-          initial={{ opacity: 0, y: -18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mx-auto flex min-h-20 w-full max-w-6xl flex-wrap items-center justify-between gap-4 rounded-[1.75rem] border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_22px_70px_rgba(0,91,170,0.10)] sm:px-7 lg:px-9"
+    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+      <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
+        <motion.header
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-wrap items-center justify-between gap-4 py-6"
         >
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f] shadow-sm">
-              <Icons.graduation className="h-6 w-6" />
+          <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+              <Icons.graduation className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-2xl font-black tracking-tight sm:text-3xl">Universitas Terbuka</p>
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">English Department</p>
+            <div className="leading-tight">
+              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
+              <p className="text-xs text-[#6f8aa3]">English Department</p>
             </div>
-          </div>
+          </button>
+          <nav className="flex items-center gap-1.5">
+            <button type="button" onClick={onBack} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa]">Tutor search</button>
+            <span className="rounded-lg bg-[#e5eef8] px-3 py-2 text-sm font-medium text-[#102f52]">Sign in</span>
+          </nav>
+        </motion.header>
 
-          <div className="flex items-center rounded-full bg-[#eef5ff] p-1 text-sm font-black">
-            <button type="button" onClick={onBack} className="rounded-full px-4 py-2 text-[#315577] hover:bg-white sm:px-5">
-              Public Mode
-            </button>
-            <button type="button" className="rounded-full bg-[#ffd23f] px-5 py-2 text-[#102f52] shadow-sm sm:px-6">
-              Login Mode
-            </button>
-          </div>
-        </motion.nav>
-
-        <main className="relative mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 py-12 lg:grid-cols-[0.95fr_1.05fr] lg:py-16">
-          <motion.div
-            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            className="relative z-10"
+        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1fr_0.85fr] lg:gap-16">
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="mb-7 inline-flex rounded-full border border-[#d7e6f7] bg-white px-4 py-2 text-sm font-semibold text-[#005baa] shadow-sm">
-              Lecturer Database
-            </div>
-            <h1 className="max-w-2xl text-5xl font-black leading-[0.96] tracking-tight text-[#102f52] sm:text-6xl lg:text-7xl">
-              Manage lecturers, plot courses, see the big picture.
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#d7e6f7] bg-white px-3 py-1 text-xs font-medium text-[#6f8aa3]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
+              Administrator access
+            </span>
+            <h1 className="mt-6 font-serif text-[2.4rem] font-medium leading-[1.06] tracking-[-0.02em] text-[#102f52] sm:text-5xl">
+              Manage the department from one place.
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-8 text-[#4f6478]">
-              A single database for degrees, expertise, availability and teaching load across the department.
+            <p className="mt-6 max-w-md text-base leading-7 text-[#44607a]">
+              Sign in to manage lecturers, courses, term plotting, and teaching availability across the English Department.
             </p>
-            <p className="mt-10 hidden text-xs font-semibold text-[#7c8ea1] lg:block">© 2026 Universitas Terbuka — English Department</p>
-          </motion.div>
+            <ul className="mt-8 space-y-3 text-sm text-[#44607a]">
+              {["Lecturer directory, expertise & ratings", "Course plotting by academic term", "Availability and teaching-load overview"].map((item) => (
+                <li key={item} className="flex items-center gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e5effa] text-[#005baa]">
+                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </motion.section>
 
-          <div className="relative mx-auto w-full max-w-2xl lg:mx-0">
-            <motion.div
-              initial={{ opacity: 0, x: -20, rotate: -3 }}
-              animate={{ opacity: 1, x: 0, rotate: -2 }}
-              transition={{ duration: 0.65, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -left-8 top-8 hidden rounded-2xl border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_18px_50px_rgba(0,91,170,0.10)] lg:block"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#c99800]">Restricted access</p>
-              <p className="mt-1 text-lg font-black text-[#102f52]">Department data</p>
-            </motion.div>
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full rounded-2xl border border-[#d7e6f7] bg-white p-6 shadow-[0_1px_2px_rgba(20,20,19,0.04),0_18px_40px_-20px_rgba(20,20,19,0.22)] sm:p-8 lg:ml-auto lg:max-w-md"
+          >
+            <span className="text-xs font-medium uppercase tracking-[0.14em] text-[#93a7bc]">Restricted access</span>
+            <h2 className="mt-2 font-serif text-3xl font-medium tracking-[-0.01em] text-[#102f52]">Sign in</h2>
+            <p className="mt-2 text-sm leading-6 text-[#44607a]">
+              {USE_SUPABASE ? "Welcome back. Sign in to manage the department." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}
+            </p>
 
-            <motion.div
-              initial={{ opacity: 0, x: -18, rotate: 4 }}
-              animate={{ opacity: 1, x: 0, rotate: 3 }}
-              transition={{ duration: 0.65, delay: 0.48, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute -bottom-7 left-8 hidden rounded-2xl border border-[#d7e6f7] bg-white px-5 py-4 shadow-[0_18px_50px_rgba(0,91,170,0.10)] lg:block"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#005baa]">Database</p>
-              <p className="mt-1 text-lg font-black text-[#102f52]">{USE_SUPABASE ? "Configured" : "Not configured"}</p>
-            </motion.div>
-
-            <motion.section
-              initial={{ opacity: 0, y: 28, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.72, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="relative z-10 ml-auto w-full rounded-[2rem] border border-[#d7e6f7] bg-white p-5 shadow-[0_28px_90px_rgba(0,91,170,0.14)] sm:p-7 lg:max-w-md lg:p-8"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-[#005baa]">Restricted access</p>
-              <h2 className="mt-2 text-3xl font-black tracking-tight text-[#102f52] sm:text-4xl">Sign in</h2>
-              <p className="mt-3 text-base leading-7 text-[#4f6478]">
-                {USE_SUPABASE ? "Welcome back! Please sign in to your account." : "Supabase is not configured. Ask an administrator to set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."}
-              </p>
-
-              <div className="mt-6 space-y-4">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-black text-[#102f52]">Email</span>
-                  <TextInput icon={Icons.users} value={email} onChange={setEmail} placeholder="Email address" />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-black text-[#102f52]">Password</span>
-                  <TextInput icon={Icons.check} value={password} onChange={setPassword} placeholder="Password" type="password" />
-                </label>
-                {error && <p className="rounded-xl bg-[#fde2e2] px-3 py-2 text-sm font-semibold text-[#8a3a3a]">{error}</p>}
-                <Button className="w-full !rounded-2xl !bg-[#005baa] py-3 text-base !text-white hover:!bg-[#004984]" onClick={submit} disabled={busy || !email || !password || (!USE_SUPABASE && !isDemoCredentials)}>
-                  {busy ? "Processing..." : "Sign in"}
-                </Button>
-                <button type="button" onClick={useDemoAccount} className="w-full rounded-2xl border border-[#d7e6f7] bg-white px-4 py-3 text-base font-semibold text-[#102f52] transition hover:bg-[#f4f9ff]">
-                  Use demo account
-                </button>
-                <p className="text-center text-xs font-semibold leading-5 text-[#6f8295]">
-                  Demo account: {DEMO_ACCOUNT.email} / {DEMO_ACCOUNT.password}
-                </p>
-              </div>
-            </motion.section>
-          </div>
+            <form onSubmit={(event) => { event.preventDefault(); if (!busy && email && password && (USE_SUPABASE || isDemoCredentials)) submit(); }} className="mt-6 space-y-4">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#6f8aa3]">Email</span>
+                <div className="flex h-12 items-center gap-2.5 rounded-xl border border-[#ccdcef] bg-white px-3.5 transition focus-within:border-[#005baa]">
+                  <Icons.users className="h-4 w-4 text-[#93a7bc]" />
+                  <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="you@ecampus.ut.ac.id" className="w-full bg-transparent text-sm text-[#102f52] outline-none placeholder:text-[#9db1c6]" />
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#6f8aa3]">Password</span>
+                <div className="flex h-12 items-center gap-2.5 rounded-xl border border-[#ccdcef] bg-white px-3.5 transition focus-within:border-[#005baa]">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 text-[#93a7bc]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" placeholder="Password" className="w-full bg-transparent text-sm text-[#102f52] outline-none placeholder:text-[#9db1c6]" />
+                </div>
+              </label>
+              {error && <p className="rounded-xl border border-[#E8C4B8] bg-[#F8EAE4] px-3 py-2.5 text-sm font-medium text-[#A8431F]">{error}</p>}
+              <button type="submit" disabled={busy || !email || !password || (!USE_SUPABASE && !isDemoCredentials)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#005baa] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#004984] disabled:cursor-not-allowed disabled:opacity-50">
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+              <button type="button" onClick={useDemoAccount} className="inline-flex w-full items-center justify-center rounded-xl border border-[#ccdcef] bg-white px-5 py-3 text-sm font-medium text-[#102f52] transition hover:bg-[#eaf2fb]">
+                Use demo account
+              </button>
+            </form>
+            <p className="mt-4 text-center text-xs leading-5 text-[#93a7bc]">
+              Demo account: {DEMO_ACCOUNT.email} / {DEMO_ACCOUNT.password}
+            </p>
+          </motion.section>
         </main>
+
+        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+          © 2026 Universitas Terbuka — English Department
+        </footer>
       </div>
     </div>
   );

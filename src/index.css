@@ -4,6 +4,21 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Make every clickable affordance show a pointer cursor so users can tell what is interactive. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+label:has(> select),
+select,
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .mobile-filter-fab {
   display: none;
 }
