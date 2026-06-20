@@ -1125,16 +1125,16 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
             </div>
           </div>
           <nav className="flex items-center gap-1">
-            <button type="button" onClick={onPublicMode} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa]">
+            <button type="button" onClick={onPublicMode} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa] sm:inline-flex">
               Tutor search
             </button>
-            <button type="button" onClick={onLoginMode} className="rounded-lg bg-[#005baa] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#004984]">
+            <button type="button" onClick={onLoginMode} className="rounded-lg bg-[#005baa] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#004984] sm:px-4">
               Sign in
             </button>
           </nav>
         </motion.header>
 
-        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-4">
+        <main className="grid flex-1 items-start gap-8 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16 lg:py-4">
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1144,19 +1144,19 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
               <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
               Lecturer portal
             </span>
-            <h1 className="mt-6 font-serif text-[2.6rem] font-medium leading-[1.05] tracking-[-0.02em] text-[#102f52] sm:text-5xl lg:text-6xl">
+            <h1 className="mt-5 font-serif text-[2rem] font-medium leading-[1.1] tracking-[-0.02em] text-[#102f52] sm:mt-6 sm:text-5xl sm:leading-[1.05] lg:text-6xl">
               The people and classes behind the English Department.
             </h1>
-            <p className="mt-6 max-w-md text-base leading-7 text-[#44607a]">
+            <p className="mt-4 max-w-md text-[15px] leading-7 text-[#44607a] sm:mt-6 sm:text-base">
               Tutors can view their profile by ID, while administrators sign in to manage lecturers, courses, and term plotting from one dashboard.
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-3">
-              <button type="button" onClick={onPublicMode} className="inline-flex items-center gap-2 rounded-xl bg-[#005baa] px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#004984]">
+            <div className="mt-7 flex flex-wrap items-center gap-3 sm:mt-9">
+              <button type="button" onClick={onPublicMode} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#005baa] px-5 py-3.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#004984] sm:w-auto sm:py-3">
                 <Icons.search className="h-4 w-4" />
                 Look up a tutor
               </button>
             </div>
-            <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-[#6f8aa3] underline-offset-4 transition hover:text-[#102f52] hover:underline">
+            <a href={TUTOR_DATA_FORM_URL} target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-[#6f8aa3] underline-offset-4 transition hover:text-[#102f52] hover:underline sm:mt-6">
               <Icons.file className="h-4 w-4" />
               New tutor? Fill in the data form
             </a>
@@ -1259,16 +1259,16 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
             </div>
           </button>
           <nav className="flex flex-wrap items-center gap-1.5">
-            <span title={dbStatus} role="status" className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${isHydrated ? "border-[#CBE0CF] bg-[#EAF3EC] text-[#3F8A5E]" : "border-[#E8DDC0] bg-[#F6EFD9] text-[#8A6D2F]"}`}>
+            <span title={dbStatus} role="status" className={`hidden items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium sm:inline-flex ${isHydrated ? "border-[#CBE0CF] bg-[#EAF3EC] text-[#3F8A5E]" : "border-[#E8DDC0] bg-[#F6EFD9] text-[#8A6D2F]"}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${isHydrated ? "bg-[#3F8A5E]" : "bg-[#C79A3A]"}`} />
               {isHydrated ? "Connected" : "Connecting"}
             </span>
             <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa] disabled:cursor-not-allowed disabled:opacity-50">Refresh</button>
-            <button type="button" onClick={onLogin} className="rounded-lg bg-[#005baa] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#004984]">Sign in</button>
+            <button type="button" onClick={onLogin} className="rounded-lg bg-[#005baa] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#004984] sm:px-4">Sign in</button>
           </nav>
         </motion.header>
 
-        <main className="grid flex-1 items-start gap-12 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+        <main className="grid flex-1 items-start gap-8 py-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-10">
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1278,13 +1278,13 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
               <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
               Lecturer profile
             </span>
-            <h1 className="mt-6 font-serif text-[2.2rem] font-medium leading-[1.08] tracking-[-0.02em] text-[#102f52] sm:text-4xl">
+            <h1 className="mt-5 font-serif text-[1.9rem] font-medium leading-[1.08] tracking-[-0.02em] text-[#102f52] sm:mt-6 sm:text-4xl">
               Find a tutor by ID.
             </h1>
-            <p className="mt-4 max-w-sm text-base leading-7 text-[#44607a]">
+            <p className="mt-3 max-w-sm text-[15px] leading-7 text-[#44607a] sm:mt-4 sm:text-base">
               Enter a tutor's ID to see their public profile, expertise, and current teaching availability.
             </p>
-            <form onSubmit={submit} className="mt-8 space-y-4">
+            <form onSubmit={submit} className="mt-6 space-y-4 sm:mt-8">
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-[#6f8aa3]">Tutor ID</span>
                 <div className="flex h-12 items-center gap-2.5 rounded-xl border border-[#ccdcef] bg-white px-3.5 transition focus-within:border-[#005baa]">
@@ -1329,7 +1329,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
             )}
             {USE_SUPABASE && isHydrated && !submitted && !publicDirectoryEmpty && (
               <PublicNotice title="Ready when you are">
-                Enter a tutor ID on the left to view the matching profile.
+                Enter a tutor ID to view the matching profile.
               </PublicNotice>
             )}
             {publicDirectoryEmpty && (
@@ -2200,11 +2200,11 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
           </button>
           <nav className="flex items-center gap-1.5">
             <button type="button" onClick={onBack} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa]">Tutor search</button>
-            <span className="rounded-lg bg-[#e5eef8] px-3 py-2 text-sm font-medium text-[#102f52]">Sign in</span>
+            <span className="hidden rounded-lg bg-[#e5eef8] px-3 py-2 text-sm font-medium text-[#102f52] sm:inline-block">Sign in</span>
           </nav>
         </motion.header>
 
-        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[1fr_0.85fr] lg:gap-16">
+        <main className="grid flex-1 items-start gap-8 py-8 lg:grid-cols-[1fr_0.85fr] lg:items-center lg:gap-16 lg:py-10">
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -2214,13 +2214,13 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
               <span className="h-1.5 w-1.5 rounded-full bg-[#f4b000]" />
               Administrator access
             </span>
-            <h1 className="mt-6 font-serif text-[2.4rem] font-medium leading-[1.06] tracking-[-0.02em] text-[#102f52] sm:text-5xl">
+            <h1 className="mt-5 font-serif text-[1.95rem] font-medium leading-[1.08] tracking-[-0.02em] text-[#102f52] sm:mt-6 sm:text-5xl sm:leading-[1.06]">
               Manage the department from one place.
             </h1>
-            <p className="mt-6 max-w-md text-base leading-7 text-[#44607a]">
+            <p className="mt-4 max-w-md text-[15px] leading-7 text-[#44607a] sm:mt-6 sm:text-base">
               Sign in to manage lecturers, courses, term plotting, and teaching availability across the English Department.
             </p>
-            <ul className="mt-8 space-y-3 text-sm text-[#44607a]">
+            <ul className="mt-7 hidden space-y-3 text-sm text-[#44607a] sm:mt-8 sm:block">
               {["Lecturer directory, expertise & ratings", "Course plotting by academic term", "Availability and teaching-load overview"].map((item) => (
                 <li key={item} className="flex items-center gap-2.5">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e5effa] text-[#005baa]">
