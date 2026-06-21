@@ -1107,28 +1107,28 @@ function FloatingBottomNav({ active, setActive, onLogout }) {
 function LandingScreen({ onPublicMode, onLoginMode }) {
   const ease = [0.22, 1, 0.36, 1];
   return (
-    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#f7f4ec] px-5 text-[#1f2a3d] sm:px-8 lg:px-10">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease }}
-          className="flex flex-wrap items-center justify-between gap-4 py-6"
+          className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
               <Icons.graduation className="h-5 w-5" />
             </span>
             <div className="leading-tight">
-              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
-              <p className="text-xs text-[#6f8aa3]">English Department</p>
+              <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
             </div>
           </div>
           <nav className="flex items-center gap-1">
-            <button type="button" onClick={onPublicMode} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa] sm:inline-flex">
+            <button type="button" onClick={onPublicMode} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-[#5b6678] transition hover:bg-[#fcfaf4] hover:text-[#1f2a3d] sm:inline-flex">
               Tutor search
             </button>
-            <button type="button" onClick={onLoginMode} className="rounded-lg bg-[#005baa] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#004984] sm:px-4">
+            <button type="button" onClick={onLoginMode} className="rounded-lg bg-[#2b62a5] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#244f86] sm:px-4">
               Sign in
             </button>
           </nav>
@@ -1208,8 +1208,18 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
           </motion.section>
         </main>
 
-        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+        <footer className="border-t border-[#e7e0d0] py-6 text-center text-xs text-[#8a93a3]">
           © 2026 Universitas Terbuka — English Department
+          <span className="mx-1">·</span>
+          Developed by{" "}
+          <a
+            href="https://ardikardianto.github.io/resume"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[#2b62a5] underline-offset-2 hover:underline"
+          >
+            Ardik Ardianto
+          </a>
         </footer>
       </div>
     </div>
@@ -1241,21 +1251,21 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
   };
 
   return (
-    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#f7f4ec] px-5 text-[#1f2a3d] sm:px-8 lg:px-10">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="flex flex-wrap items-center justify-between gap-4 py-6"
+          className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
               <Icons.graduation className="h-5 w-5" />
             </span>
             <div className="leading-tight">
-              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
-              <p className="text-xs text-[#6f8aa3]">English Department</p>
+              <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
             </div>
           </button>
           <nav className="flex flex-wrap items-center gap-1.5">
@@ -1263,8 +1273,8 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
               <span className={`h-1.5 w-1.5 rounded-full ${isHydrated ? "bg-[#3F8A5E]" : "bg-[#C79A3A]"}`} />
               {isHydrated ? "Connected" : "Connecting"}
             </span>
-            <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa] disabled:cursor-not-allowed disabled:opacity-50">Refresh</button>
-            <button type="button" onClick={onLogin} className="rounded-lg bg-[#005baa] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#004984] sm:px-4">Sign in</button>
+            <button type="button" onClick={refreshPublicDirectory} disabled={!USE_SUPABASE} className="rounded-lg px-3 py-2 text-sm font-medium text-[#5b6678] transition hover:bg-[#fcfaf4] hover:text-[#1f2a3d] disabled:cursor-not-allowed disabled:opacity-50">Refresh</button>
+            <button type="button" onClick={onLogin} className="rounded-lg bg-[#2b62a5] px-3.5 py-2 text-sm font-medium text-white transition hover:bg-[#244f86] sm:px-4">Sign in</button>
           </nav>
         </motion.header>
 
@@ -1346,8 +1356,18 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
           </motion.section>
         </main>
 
-        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+        <footer className="border-t border-[#e7e0d0] py-6 text-center text-xs text-[#8a93a3]">
           © 2026 Universitas Terbuka — English Department
+          <span className="mx-1">·</span>
+          Developed by{" "}
+          <a
+            href="https://ardikardianto.github.io/resume"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[#2b62a5] underline-offset-2 hover:underline"
+          >
+            Ardik Ardianto
+          </a>
         </footer>
       </div>
     </div>
@@ -2181,25 +2201,25 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
     onDemoLogin();
   };
   return (
-    <div className="min-h-screen bg-[#f5f8fc] px-5 text-[#102f52] sm:px-8 lg:px-10">
+    <div className="min-h-screen bg-[#f7f4ec] px-5 text-[#1f2a3d] sm:px-8 lg:px-10">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="flex flex-wrap items-center justify-between gap-4 py-6"
+          className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#005baa] text-[#ffd23f]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
               <Icons.graduation className="h-5 w-5" />
             </span>
             <div className="leading-tight">
-              <p className="text-[15px] font-semibold tracking-tight text-[#102f52]">Universitas Terbuka</p>
-              <p className="text-xs text-[#6f8aa3]">English Department</p>
+              <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
             </div>
           </button>
           <nav className="flex items-center gap-1.5">
-            <button type="button" onClick={onBack} className="rounded-lg px-3 py-2 text-sm font-medium text-[#2f4a63] transition hover:bg-[#e9f1fa]">Tutor search</button>
+            <button type="button" onClick={onBack} className="rounded-lg px-3 py-2 text-sm font-medium text-[#5b6678] transition hover:bg-[#fcfaf4] hover:text-[#1f2a3d]">Tutor search</button>
             <span className="hidden rounded-lg bg-[#e5eef8] px-3 py-2 text-sm font-medium text-[#102f52] sm:inline-block">Sign in</span>
           </nav>
         </motion.header>
@@ -2273,8 +2293,18 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
           </motion.section>
         </main>
 
-        <footer className="border-t border-[#d7e6f7] py-6 text-xs text-[#93a7bc]">
+        <footer className="border-t border-[#e7e0d0] py-6 text-center text-xs text-[#8a93a3]">
           © 2026 Universitas Terbuka — English Department
+          <span className="mx-1">·</span>
+          Developed by{" "}
+          <a
+            href="https://ardikardianto.github.io/resume"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[#2b62a5] underline-offset-2 hover:underline"
+          >
+            Ardik Ardianto
+          </a>
         </footer>
       </div>
     </div>
