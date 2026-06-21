@@ -1113,7 +1113,7 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease }}
-          className="sticky top-0 z-20 -mx-5 flex flex-col items-center gap-3 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-3.5 backdrop-blur-md sm:-mx-8 sm:flex-row sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:-mx-10 lg:px-10"
+          className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <div className="flex items-center gap-2.5">
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
@@ -1268,7 +1268,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
             </div>
           </button>
-          <nav className="flex flex-wrap items-center gap-1.5">
+          <nav className="flex flex-wrap items-center justify-center gap-1.5">
             <span title={dbStatus} role="status" className={`hidden items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium sm:inline-flex ${isHydrated ? "border-[#CBE0CF] bg-[#EAF3EC] text-[#3F8A5E]" : "border-[#E8DDC0] bg-[#F6EFD9] text-[#8A6D2F]"}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${isHydrated ? "bg-[#3F8A5E]" : "bg-[#C79A3A]"}`} />
               {isHydrated ? "Connected" : "Connecting"}
@@ -2207,7 +2207,7 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="sticky top-0 z-20 -mx-5 flex flex-col items-center gap-3 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-3.5 backdrop-blur-md sm:-mx-8 sm:flex-row sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:-mx-10 lg:px-10"
+          className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
