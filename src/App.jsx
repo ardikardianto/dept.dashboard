@@ -1101,7 +1101,7 @@ function FormGrid({ children }) {
 }
 
 function FloatingBottomNav({ active, setActive, onLogout }) {
-  return <nav className="mobile-bottom-nav fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 sm:px-6"><div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto rounded-[1.75rem] border border-[#d7e6f7] bg-white/95 p-2 shadow-[0_18px_60px_rgba(0,91,170,0.14)] backdrop-blur-xl"><div className="hidden shrink-0 items-center gap-3 border-r border-[#d7e6f7] px-3 pr-4 md:flex"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#005baa] text-[#ffd23f]"><Icons.graduation className="h-5 w-5" /></div><div><p className="text-sm font-black text-[#102f52]">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#005baa]">{department.subtitle}</p></div></div>{nav.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} title={item.label} onClick={() => setActive(item.id)} className={`flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm ${selected ? "bg-[#ffd23f] text-[#102f52] shadow-sm" : "text-[#315577] hover:bg-[#eef5ff] hover:text-[#005baa]"}`}><Icon className="h-5 w-5" /><span>{item.label}</span></button>; })}<button title="Logout" onClick={onLogout} className="ml-auto flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d7e6f7] px-3 py-2 text-[11px] font-black text-[#315577] transition hover:bg-[#eef5ff] hover:text-[#005baa] sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm"><Icons.logout className="h-5 w-5" /><span>Logout</span></button></div></nav>;
+  return <nav className="mobile-bottom-nav fixed inset-x-0 bottom-4 z-40 px-3 sm:bottom-6 sm:px-6"><div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto rounded-[1.75rem] border border-[#d7e6f7] bg-white/95 p-2 shadow-[0_18px_60px_rgba(0,91,170,0.14)] backdrop-blur-xl"><div className="hidden shrink-0 items-center gap-3 border-r border-[#d7e6f7] px-3 pr-4 md:flex"><img src="/logo.png" alt="Universitas Terbuka logo" className="h-10 w-10 rounded-2xl object-contain" /><div><p className="text-sm font-black text-[#102f52]">{department.name}</p><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#005baa]">{department.subtitle}</p></div></div>{nav.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} title={item.label} onClick={() => setActive(item.id)} className={`flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm ${selected ? "bg-[#ffd23f] text-[#102f52] shadow-sm" : "text-[#315577] hover:bg-[#eef5ff] hover:text-[#005baa]"}`}><Icon className="h-5 w-5" /><span>{item.label}</span></button>; })}<button title="Logout" onClick={onLogout} className="ml-auto flex min-w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-[#d7e6f7] px-3 py-2 text-[11px] font-black text-[#315577] transition hover:bg-[#eef5ff] hover:text-[#005baa] sm:min-w-24 sm:flex-row sm:px-4 sm:text-sm"><Icons.logout className="h-5 w-5" /><span>Logout</span></button></div></nav>;
 }
 
 function LandingScreen({ onPublicMode, onLoginMode }) {
@@ -1116,9 +1116,7 @@ function LandingScreen({ onPublicMode, onLoginMode }) {
           className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <div className="flex items-center gap-2.5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
-              <Icons.graduation className="h-5 w-5" />
-            </span>
+            <img src="/logo.png" alt="Universitas Terbuka logo" className="h-10 w-10 rounded-[11px] object-contain" />
             <div className="leading-tight">
               <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
@@ -1260,9 +1258,7 @@ function PublicLookupScreen({ lecturers, courses, terms, termPlottings, selected
           className="sticky top-0 z-20 -mx-5 flex flex-col items-center gap-3 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-3.5 backdrop-blur-md sm:-mx-8 sm:flex-row sm:justify-between sm:gap-4 sm:px-8 sm:py-4 lg:-mx-10 lg:px-10"
         >
           <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
-            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
-              <Icons.graduation className="h-5 w-5" />
-            </span>
+            <img src="/logo.png" alt="Universitas Terbuka logo" className="h-10 w-10 rounded-[11px] object-contain" />
             <div className="leading-tight">
               <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
@@ -2210,9 +2206,7 @@ function LoginScreen({ onLogin, onBack, onDemoLogin }) {
           className="sticky top-0 z-20 -mx-5 flex flex-wrap items-center justify-between gap-4 border-b border-[#e7e0d0] bg-[#f7f4ec]/85 px-5 py-4 backdrop-blur-md sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10"
         >
           <button type="button" onClick={onBack} className="flex items-center gap-2.5 text-left">
-            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#2b62a5] text-[#f2c14e]">
-              <Icons.graduation className="h-5 w-5" />
-            </span>
+            <img src="/logo.png" alt="Universitas Terbuka logo" className="h-10 w-10 rounded-[11px] object-contain" />
             <div className="leading-tight">
               <p className="font-serif text-lg font-semibold tracking-tight text-[#16243a]">Universitas Terbuka</p>
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#5b6678]">English Department</p>
