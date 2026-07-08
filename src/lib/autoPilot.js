@@ -2,29 +2,86 @@ export const LECTURER_CLASS_LIMIT = 4;
 
 const LOW_RATING_THRESHOLD = 2;
 const EQUAL_DISTRIBUTION_TARGET = 2;
-const AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE = "No positive availability slots were found, so auto-pilot used rating-based class limits as a fallback for this run.";
+const AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE =
+  "No positive availability slots were found, so auto-pilot used rating-based class limits as a fallback for this run.";
 const FIVE_STAR_TARGET = LECTURER_CLASS_LIMIT;
 
 const COURSE_EXPERTISE_RULES = [
   {
     expertise: "English Language Teaching",
-    keywords: ["reading", "writing", "listening", "speaking", "teaching", "elt", "tesol", "vocabulary", "composition", "language assessment", "artikel ilmiah"],
+    keywords: [
+      "reading",
+      "writing",
+      "listening",
+      "speaking",
+      "teaching",
+      "elt",
+      "tesol",
+      "vocabulary",
+      "composition",
+      "language assessment",
+      "artikel ilmiah",
+    ],
   },
   {
     expertise: "English Linguistics",
-    keywords: ["english linguistics", "linguistics", "syntax", "phonology", "morphology", "semantics", "pragmatics", "pragmatik", "discourse", "pengantar linguistik umum", "grammar translation exercises", "metode penelitian", "artikel ilmiah"],
+    keywords: [
+      "english linguistics",
+      "linguistics",
+      "syntax",
+      "phonology",
+      "morphology",
+      "semantics",
+      "pragmatics",
+      "pragmatik",
+      "discourse",
+      "pengantar linguistik umum",
+      "grammar translation exercises",
+      "metode penelitian",
+      "artikel ilmiah",
+    ],
   },
   {
     expertise: "Translation Studies",
-    keywords: ["translation", "translating", "translator", "interpreting", "teori dan masalah penerjemahan", "grammar translation exercises", "penerjemahan karya fiksi", "analisis teks dalam penerjemahan", "metode penelitian", "praktik penerjemahan", "ukt", "artikel ilmiah"],
+    keywords: [
+      "translation",
+      "translating",
+      "translator",
+      "interpreting",
+      "teori dan masalah penerjemahan",
+      "grammar translation exercises",
+      "penerjemahan karya fiksi",
+      "analisis teks dalam penerjemahan",
+      "metode penelitian",
+      "praktik penerjemahan",
+      "ukt",
+      "artikel ilmiah",
+    ],
   },
   {
     expertise: "Indonesian Linguistics",
-    keywords: ["indonesian", "bahasa indonesia", "tata bahasa", "pemahaman", "pengantar linguistik umum", "pragmatik", "keterampilan merangkum bacaan", "penyuntingan teks"],
+    keywords: [
+      "indonesian",
+      "bahasa indonesia",
+      "tata bahasa",
+      "pemahaman",
+      "pengantar linguistik umum",
+      "pragmatik",
+      "keterampilan merangkum bacaan",
+      "penyuntingan teks",
+    ],
   },
   {
     expertise: "Literary Studies",
-    keywords: ["literary", "literature", "poetry", "prose", "drama", "novel", "pengantar ilmu sastra"],
+    keywords: [
+      "literary",
+      "literature",
+      "poetry",
+      "prose",
+      "drama",
+      "novel",
+      "pengantar ilmu sastra",
+    ],
   },
   {
     expertise: "Philosophy",
@@ -32,12 +89,24 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "English for Specific Purposes",
-    keywords: ["specific purposes", "esp", "academic english", "business english", "professional english"],
+    keywords: [
+      "specific purposes",
+      "esp",
+      "academic english",
+      "business english",
+      "professional english",
+    ],
   },
 ];
 
-const toLookupKey = (value) => String(value || "").trim().toLowerCase();
-const normalizeText = (value) => toLookupKey(value).replace(/[^a-z0-9]+/g, " ").trim();
+const toLookupKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+const normalizeText = (value) =>
+  toLookupKey(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
 function clampRating(value) {
   const rating = Number(value);
@@ -64,9 +133,11 @@ function getLecturerExpertiseKeys(lecturer) {
 export function getCourseExpertiseMatches(course) {
   const courseText = getCourseText(course);
   if (!courseText) return [];
-  return COURSE_EXPERTISE_RULES
-    .filter((rule) => rule.keywords.some((keyword) => courseText.includes(normalizeText(keyword))))
-    .map((rule) => rule.expertise);
+  return COURSE_EXPERTISE_RULES.filter((rule) =>
+    rule.keywords.some((keyword) =>
+      courseText.includes(normalizeText(keyword)),
+    ),
+  ).map((rule) => rule.expertise);
 }
 
 export function expertiseMatchesCourse(lecturer, course) {
@@ -74,8 +145,11 @@ export function expertiseMatchesCourse(lecturer, course) {
   if (!expertiseKeys.length) return false;
 
   const courseText = getCourseText(course);
-  const mappedExpertise = getCourseExpertiseMatches(course).map((item) => normalizeText(item));
-  if (expertiseKeys.some((expertise) => mappedExpertise.includes(expertise))) return true;
+  const mappedExpertise = getCourseExpertiseMatches(course).map((item) =>
+    normalizeText(item),
+  );
+  if (expertiseKeys.some((expertise) => mappedExpertise.includes(expertise)))
+    return true;
 
   const titleText = normalizeText(course?.title || "");
   return expertiseKeys.some((expertise) => {
@@ -84,12 +158,23 @@ export function expertiseMatchesCourse(lecturer, course) {
   });
 }
 
-export function getLecturerAutoPilotCapacity(lecturer, useAvailabilityFallback = false) {
+export function getLecturerAutoPilotCapacity(
+  lecturer,
+  useAvailabilityFallback = false,
+) {
   const ratingLimit = getLecturerRatingClassLimit(lecturer);
-  const currentLoad = Array.isArray(lecturer?.plotted) ? lecturer.plotted.length : 0;
+  const currentLoad = Array.isArray(lecturer?.plotted)
+    ? lecturer.plotted.length
+    : 0;
   if (useAvailabilityFallback) return ratingLimit;
   const availableSlots = Number(lecturer?.available ?? 0);
-  return Math.min(ratingLimit, Math.max(0, currentLoad + (Number.isFinite(availableSlots) ? availableSlots : 0)));
+  return Math.min(
+    ratingLimit,
+    Math.max(
+      0,
+      currentLoad + (Number.isFinite(availableSlots) ? availableSlots : 0),
+    ),
+  );
 }
 
 export function getLecturerRatingClassLimit(lecturer) {
@@ -102,6 +187,115 @@ export function lecturerHasAutoPilotRisk(lecturer) {
   return rating > 0 && rating <= LOW_RATING_THRESHOLD;
 }
 
+export function calculatePlottingHealth(
+  lecturers,
+  courses,
+  classCounts = {},
+  assignmentMap = {},
+) {
+  const lecturerById = new Map(
+    lecturers.map((lecturer) => [lecturer.id, lecturer]),
+  );
+  const assignedByLecturer = {};
+  const unassignedClasses = [];
+  const expertiseMismatches = [];
+  const unknownAssignments = [];
+
+  courses.forEach((course) => {
+    const planned = toClassCount(classCounts[course.code]);
+    Array.from({ length: planned }, (_, index) => {
+      const className = `${course.code}.${index + 1}`;
+      const lecturerId = assignmentMap[course.code]?.[index] || "";
+      if (!lecturerId) {
+        unassignedClasses.push({
+          className,
+          courseCode: course.code,
+          courseTitle: course.title,
+        });
+        return;
+      }
+      const lecturer = lecturerById.get(lecturerId);
+      if (!lecturer) {
+        unknownAssignments.push({ className, lecturerId });
+        return;
+      }
+      assignedByLecturer[lecturerId] =
+        (assignedByLecturer[lecturerId] || 0) + 1;
+      if (!expertiseMatchesCourse(lecturer, course)) {
+        expertiseMismatches.push({
+          className,
+          courseCode: course.code,
+          courseTitle: course.title,
+          lecturerId,
+          lecturerName: lecturer.name,
+        });
+      }
+    });
+  });
+
+  const overloadedLecturers = lecturers
+    .map((lecturer) => {
+      const assigned = assignedByLecturer[lecturer.id] || 0;
+      const ratingLimit = getLecturerRatingClassLimit(lecturer);
+      const available = toClassCount(lecturer.available);
+      const availabilityLimit =
+        available > 0 ? Math.min(ratingLimit, available) : ratingLimit;
+      return {
+        id: lecturer.id,
+        name: lecturer.name,
+        assigned,
+        limit: availabilityLimit,
+        ratingLimit,
+        available,
+      };
+    })
+    .filter((lecturer) => lecturer.assigned > lecturer.limit);
+
+  const unratedLecturers = lecturers
+    .filter(
+      (lecturer) =>
+        !clampRating(lecturer.rating) &&
+        (assignedByLecturer[lecturer.id] || 0) > 0,
+    )
+    .map((lecturer) => ({
+      id: lecturer.id,
+      name: lecturer.name,
+      assigned: assignedByLecturer[lecturer.id],
+    }));
+
+  const ruleExceptions = [
+    ...unknownAssignments.map(
+      (item) =>
+        `${item.className} references unknown lecturer ${item.lecturerId}.`,
+    ),
+    ...overloadedLecturers.map(
+      (item) =>
+        `${item.name} has ${item.assigned} classes, above the ${item.limit}-class availability/rating limit.`,
+    ),
+    ...unratedLecturers
+      .filter((item) => item.assigned > 1)
+      .map(
+        (item) =>
+          `${item.name} is unrated but has ${item.assigned} classes; unrated lecturers are limited to 1.`,
+      ),
+  ];
+
+  return {
+    unassignedClasses,
+    expertiseMismatches,
+    overloadedLecturers,
+    unratedLecturers,
+    ruleExceptions,
+    assignedByLecturer,
+    isHealthy:
+      !unassignedClasses.length &&
+      !expertiseMismatches.length &&
+      !overloadedLecturers.length &&
+      !unratedLecturers.length &&
+      !ruleExceptions.length,
+  };
+}
+
 function getRatingPriorityScore(rating) {
   if (rating >= 5) return 260;
   if (rating === 4) return 150;
@@ -112,38 +306,84 @@ function getRatingPriorityScore(rating) {
 
 function getRiskLabel(lecturer) {
   const rating = clampRating(lecturer?.rating);
-  if (rating > 0 && rating <= LOW_RATING_THRESHOLD) return `${rating}-star rating`;
+  if (rating > 0 && rating <= LOW_RATING_THRESHOLD)
+    return `${rating}-star rating`;
   return "";
 }
 
 function buildAutoPilotCourseSlots(courses, classCounts, lecturers) {
-  return courses.flatMap((course) => Array.from({ length: toClassCount(classCounts[course.code]) }, (_, index) => ({ course, index }))).sort((a, b) => {
-    const aMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, a.course)).length;
-    const bMatches = lecturers.filter((lecturer) => expertiseMatchesCourse(lecturer, b.course)).length;
-    return aMatches - bMatches || a.course.code.localeCompare(b.course.code) || a.index - b.index;
-  });
+  return courses
+    .flatMap((course) =>
+      Array.from(
+        { length: toClassCount(classCounts[course.code]) },
+        (_, index) => ({ course, index }),
+      ),
+    )
+    .sort((a, b) => {
+      const aMatches = lecturers.filter((lecturer) =>
+        expertiseMatchesCourse(lecturer, a.course),
+      ).length;
+      const bMatches = lecturers.filter((lecturer) =>
+        expertiseMatchesCourse(lecturer, b.course),
+      ).length;
+      return (
+        aMatches - bMatches ||
+        a.course.code.localeCompare(b.course.code) ||
+        a.index - b.index
+      );
+    });
 }
 
-function buildInitialAssignmentMap(lecturers, courses, classCounts, existingAssignmentMap = {}) {
+function buildInitialAssignmentMap(
+  lecturers,
+  courses,
+  classCounts,
+  existingAssignmentMap = {},
+) {
   const lecturerIds = new Set(lecturers.map((lecturer) => lecturer.id));
-  return Object.fromEntries(courses.map((course) => {
-    const count = toClassCount(classCounts[course.code]);
-    const existing = Array.isArray(existingAssignmentMap[course.code]) ? existingAssignmentMap[course.code] : [];
-    return [course.code, Array.from({ length: count }, (_, index) => {
-      const lecturerId = String(existing[index] || "");
-      return !lecturerId || lecturerIds.has(lecturerId) ? lecturerId : "";
-    })];
-  }));
+  return Object.fromEntries(
+    courses.map((course) => {
+      const count = toClassCount(classCounts[course.code]);
+      const existing = Array.isArray(existingAssignmentMap[course.code])
+        ? existingAssignmentMap[course.code]
+        : [];
+      return [
+        course.code,
+        Array.from({ length: count }, (_, index) => {
+          const lecturerId = String(existing[index] || "");
+          return !lecturerId || lecturerIds.has(lecturerId) ? lecturerId : "";
+        }),
+      ];
+    }),
+  );
 }
 
 function countLecturerAssignments(assignmentMap = {}, lecturerId) {
   if (!lecturerId) return 0;
-  return Object.values(assignmentMap).reduce((sum, ids) => sum + (Array.isArray(ids) ? ids.filter((id) => id === lecturerId).length : 0), 0);
+  return Object.values(assignmentMap).reduce(
+    (sum, ids) =>
+      sum +
+      (Array.isArray(ids) ? ids.filter((id) => id === lecturerId).length : 0),
+    0,
+  );
 }
 
-function calculateAutoPilotMetrics(lecturers, courses, assignmentMap, preservedAssignmentMap, assignmentExplanations) {
-  const plannedCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).length, 0);
-  const assignedCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter(Boolean).length, 0);
+function calculateAutoPilotMetrics(
+  lecturers,
+  courses,
+  assignmentMap,
+  preservedAssignmentMap,
+  assignmentExplanations,
+) {
+  const plannedCount = courses.reduce(
+    (sum, course) => sum + (assignmentMap[course.code] || []).length,
+    0,
+  );
+  const assignedCount = courses.reduce(
+    (sum, course) =>
+      sum + (assignmentMap[course.code] || []).filter(Boolean).length,
+    0,
+  );
   const lecturerLoads = lecturers.map((lecturer) => ({
     id: lecturer.id,
     name: lecturer.name,
@@ -152,27 +392,75 @@ function calculateAutoPilotMetrics(lecturers, courses, assignmentMap, preservedA
     classLimit: getLecturerRatingClassLimit(lecturer),
     warningNote: String(lecturer.warning_note || "").trim(),
   }));
-  const averageLoad = lecturerLoads.length ? lecturerLoads.reduce((sum, item) => sum + item.load, 0) / lecturerLoads.length : 0;
-  const loadSpread = lecturerLoads.length ? Math.max(...lecturerLoads.map((item) => item.load)) - Math.min(...lecturerLoads.map((item) => item.load)) : 0;
-  const loadStdDev = lecturerLoads.length ? Math.sqrt(lecturerLoads.reduce((sum, item) => sum + (item.load - averageLoad) ** 2, 0) / lecturerLoads.length) : 0;
-  const loadDistribution = Array.from({ length: LECTURER_CLASS_LIMIT + 1 }, (_, load) => ({
-    load,
-    count: lecturerLoads.filter((item) => item.load === load).length,
-  }));
-  const overLimitLecturers = lecturerLoads.filter((item) => item.load > item.classLimit);
+  const averageLoad = lecturerLoads.length
+    ? lecturerLoads.reduce((sum, item) => sum + item.load, 0) /
+      lecturerLoads.length
+    : 0;
+  const loadSpread = lecturerLoads.length
+    ? Math.max(...lecturerLoads.map((item) => item.load)) -
+      Math.min(...lecturerLoads.map((item) => item.load))
+    : 0;
+  const loadStdDev = lecturerLoads.length
+    ? Math.sqrt(
+        lecturerLoads.reduce(
+          (sum, item) => sum + (item.load - averageLoad) ** 2,
+          0,
+        ) / lecturerLoads.length,
+      )
+    : 0;
+  const loadDistribution = Array.from(
+    { length: LECTURER_CLASS_LIMIT + 1 },
+    (_, load) => ({
+      load,
+      count: lecturerLoads.filter((item) => item.load === load).length,
+    }),
+  );
+  const overLimitLecturers = lecturerLoads.filter(
+    (item) => item.load > item.classLimit,
+  );
 
-  const lecturerById = new Map(lecturers.map((lecturer) => [lecturer.id, lecturer]));
-  const expertiseMatchCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => {
-    const lecturer = lecturerById.get(id);
-    return lecturer && expertiseMatchesCourse(lecturer, course);
-  }).length, 0);
-  const warningAssignmentCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => String(lecturerById.get(id)?.warning_note || "").trim()).length, 0);
-  const lowRatingAssignmentCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => {
-    const rating = clampRating(lecturerById.get(id)?.rating);
-    return rating > 0 && rating <= LOW_RATING_THRESHOLD;
-  }).length, 0);
-  const unratedAssignmentCount = courses.reduce((sum, course) => sum + (assignmentMap[course.code] || []).filter((id) => id && !clampRating(lecturerById.get(id)?.rating)).length, 0);
-  const preservedCount = courses.reduce((sum, course) => sum + (preservedAssignmentMap[course.code] || []).filter(Boolean).length, 0);
+  const lecturerById = new Map(
+    lecturers.map((lecturer) => [lecturer.id, lecturer]),
+  );
+  const expertiseMatchCount = courses.reduce(
+    (sum, course) =>
+      sum +
+      (assignmentMap[course.code] || []).filter((id) => {
+        const lecturer = lecturerById.get(id);
+        return lecturer && expertiseMatchesCourse(lecturer, course);
+      }).length,
+    0,
+  );
+  const warningAssignmentCount = courses.reduce(
+    (sum, course) =>
+      sum +
+      (assignmentMap[course.code] || []).filter((id) =>
+        String(lecturerById.get(id)?.warning_note || "").trim(),
+      ).length,
+    0,
+  );
+  const lowRatingAssignmentCount = courses.reduce(
+    (sum, course) =>
+      sum +
+      (assignmentMap[course.code] || []).filter((id) => {
+        const rating = clampRating(lecturerById.get(id)?.rating);
+        return rating > 0 && rating <= LOW_RATING_THRESHOLD;
+      }).length,
+    0,
+  );
+  const unratedAssignmentCount = courses.reduce(
+    (sum, course) =>
+      sum +
+      (assignmentMap[course.code] || []).filter(
+        (id) => id && !clampRating(lecturerById.get(id)?.rating),
+      ).length,
+    0,
+  );
+  const preservedCount = courses.reduce(
+    (sum, course) =>
+      sum + (preservedAssignmentMap[course.code] || []).filter(Boolean).length,
+    0,
+  );
 
   return {
     assignedCount,
@@ -181,7 +469,9 @@ function calculateAutoPilotMetrics(lecturers, courses, assignmentMap, preservedA
     newlyAssignedCount: assignmentExplanations.length,
     preservedCount,
     expertiseMatchCount,
-    expertiseMatchRate: assignedCount ? Math.round((expertiseMatchCount / assignedCount) * 100) : 0,
+    expertiseMatchRate: assignedCount
+      ? Math.round((expertiseMatchCount / assignedCount) * 100)
+      : 0,
     warningAssignmentCount,
     lowRatingAssignmentCount,
     unratedAssignmentCount,
@@ -194,13 +484,35 @@ function calculateAutoPilotMetrics(lecturers, courses, assignmentMap, preservedA
   };
 }
 
-export function buildAutoPilotPlotting(lecturers, courses, classCounts, existingAssignmentMap = {}) {
-  const plannedCourses = courses.filter((course) => toClassCount(classCounts[course.code]) > 0);
-  const assignmentMap = buildInitialAssignmentMap(lecturers, courses, classCounts, existingAssignmentMap);
-  const preservedAssignmentMap = Object.fromEntries(Object.entries(assignmentMap).map(([code, ids]) => [code, [...ids]]));
-  const slots = buildAutoPilotCourseSlots(plannedCourses, classCounts, lecturers).filter((slot) => !assignmentMap[slot.course.code]?.[slot.index]);
-  const hasPositiveAvailabilityData = lecturers.some((lecturer) => Number(lecturer?.available || 0) > 0);
-  const useAvailabilityFallback = Boolean(slots.length && lecturers.length && !hasPositiveAvailabilityData);
+export function buildAutoPilotPlotting(
+  lecturers,
+  courses,
+  classCounts,
+  existingAssignmentMap = {},
+) {
+  const plannedCourses = courses.filter(
+    (course) => toClassCount(classCounts[course.code]) > 0,
+  );
+  const assignmentMap = buildInitialAssignmentMap(
+    lecturers,
+    courses,
+    classCounts,
+    existingAssignmentMap,
+  );
+  const preservedAssignmentMap = Object.fromEntries(
+    Object.entries(assignmentMap).map(([code, ids]) => [code, [...ids]]),
+  );
+  const slots = buildAutoPilotCourseSlots(
+    plannedCourses,
+    classCounts,
+    lecturers,
+  ).filter((slot) => !assignmentMap[slot.course.code]?.[slot.index]);
+  const hasPositiveAvailabilityData = lecturers.some(
+    (lecturer) => Number(lecturer?.available || 0) > 0,
+  );
+  const useAvailabilityFallback = Boolean(
+    slots.length && lecturers.length && !hasPositiveAvailabilityData,
+  );
   const assignmentExplanations = [];
   const conflictWarningSet = new Set();
   const states = lecturers.map((lecturer) => {
@@ -216,45 +528,98 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
 
   states
     .filter((state) => state.assigned > state.capacity)
-    .forEach((state) => conflictWarningSet.add(`${state.lecturer.name} already has ${state.assigned} preserved assignment(s), above their ${state.capacity}-class availability/rating limit.`));
+    .forEach((state) =>
+      conflictWarningSet.add(
+        `${state.lecturer.name} already has ${state.assigned} preserved assignment(s), above their ${state.capacity}-class availability/rating limit.`,
+      ),
+    );
 
   const scoreCandidate = (state, course) => {
-    const expertiseScore = expertiseMatchesCourse(state.lecturer, course) ? 120 : 0;
+    const expertiseScore = expertiseMatchesCourse(state.lecturer, course)
+      ? 120
+      : 0;
     const ratingScore = getRatingPriorityScore(state.rating);
-    const fiveStarTargetScore = state.rating >= 5 ? Math.max(0, FIVE_STAR_TARGET - state.assigned) * 90 : 0;
+    const fiveStarTargetScore =
+      state.rating >= 5
+        ? Math.max(0, FIVE_STAR_TARGET - state.assigned) * 90
+        : 0;
     const remainingCapacity = Math.max(0, state.capacity - state.assigned);
-    const currentCourseCount = (assignmentMap[course.code] || []).filter((id) => id === state.lecturer.id).length;
-    const lowRatingPenalty = state.rating > 0 && state.rating <= LOW_RATING_THRESHOLD ? 40 : 0;
-    return expertiseScore + ratingScore + fiveStarTargetScore + remainingCapacity * 8 + state.capacity * 2 - state.assigned * 30 - currentCourseCount * 14 - lowRatingPenalty;
+    const currentCourseCount = (assignmentMap[course.code] || []).filter(
+      (id) => id === state.lecturer.id,
+    ).length;
+    const lowRatingPenalty =
+      state.rating > 0 && state.rating <= LOW_RATING_THRESHOLD ? 40 : 0;
+    return (
+      expertiseScore +
+      ratingScore +
+      fiveStarTargetScore +
+      remainingCapacity * 8 +
+      state.capacity * 2 -
+      state.assigned * 30 -
+      currentCourseCount * 14 -
+      lowRatingPenalty
+    );
   };
 
-  const chooseCandidate = (course, targetLimit, includeRestricted, predicate = () => true) => {
-    return states
-      .filter((state) => predicate(state) && state.capacity > 0 && state.assigned < state.capacity && state.assigned < targetLimit && (includeRestricted || !state.restricted))
-      .map((state) => ({ state, score: scoreCandidate(state, course) }))
-      .sort((a, b) => b.score - a.score || a.state.assigned - b.state.assigned || b.state.rating - a.state.rating || a.state.lecturer.name.localeCompare(b.state.lecturer.name))[0]?.state || null;
+  const chooseCandidate = (
+    course,
+    targetLimit,
+    includeRestricted,
+    predicate = () => true,
+  ) => {
+    return (
+      states
+        .filter(
+          (state) =>
+            predicate(state) &&
+            state.capacity > 0 &&
+            state.assigned < state.capacity &&
+            state.assigned < targetLimit &&
+            (includeRestricted || !state.restricted),
+        )
+        .map((state) => ({ state, score: scoreCandidate(state, course) }))
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            a.state.assigned - b.state.assigned ||
+            b.state.rating - a.state.rating ||
+            a.state.lecturer.name.localeCompare(b.state.lecturer.name),
+        )[0]?.state || null
+    );
   };
 
   const assignSlot = (slot, state, phaseLabel) => {
     if (!state) return false;
-    const expertiseMatched = expertiseMatchesCourse(state.lecturer, slot.course);
-    const priorCourseCount = (assignmentMap[slot.course.code] || []).filter((id) => id === state.lecturer.id).length;
+    const expertiseMatched = expertiseMatchesCourse(
+      state.lecturer,
+      slot.course,
+    );
+    const priorCourseCount = (assignmentMap[slot.course.code] || []).filter(
+      (id) => id === state.lecturer.id,
+    ).length;
     const warningNote = String(state.lecturer.warning_note || "").trim();
     const riskLabel = getRiskLabel(state.lecturer);
     const warnings = [];
     if (!expertiseMatched) {
       warnings.push("No listed expertise match");
-      conflictWarningSet.add(`${slot.course.code}.${slot.index + 1} was assigned outside listed expertise to ${state.lecturer.name}.`);
+      conflictWarningSet.add(
+        `${slot.course.code}.${slot.index + 1} was assigned outside listed expertise to ${state.lecturer.name}.`,
+      );
     }
     if (!state.rating) {
       warnings.push("No performance rating recorded");
-      conflictWarningSet.add(`${state.lecturer.name} has no performance rating; confirm suitability for ${slot.course.code}.${slot.index + 1}.`);
+      conflictWarningSet.add(
+        `${state.lecturer.name} has no performance rating; confirm suitability for ${slot.course.code}.${slot.index + 1}.`,
+      );
     }
     if (state.rating > 0 && state.rating <= LOW_RATING_THRESHOLD) {
       warnings.push(`${state.rating}-star rating: limited to 1 class`);
-      conflictWarningSet.add(`${state.lecturer.name} has a ${state.rating}-star rating and is limited to 1 class.`);
+      conflictWarningSet.add(
+        `${state.lecturer.name} has a ${state.rating}-star rating and is limited to 1 class.`,
+      );
     }
-    if (state.assigned + 1 >= state.capacity && state.capacity > 0) warnings.push("Lecturer reaches available/capacity limit");
+    if (state.assigned + 1 >= state.capacity && state.capacity > 0)
+      warnings.push("Lecturer reaches available/capacity limit");
     assignmentMap[slot.course.code][slot.index] = state.lecturer.id;
     assignmentExplanations.push({
       id: `${slot.course.code}.${slot.index + 1}`,
@@ -264,10 +629,16 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
       lecturerId: state.lecturer.id,
       lecturerName: state.lecturer.name,
       reasons: [
-        expertiseMatched ? "Expertise matches the course." : "Selected by rating, availability, and workload because no expertise match was available.",
-        state.rating ? `${state.rating}-star performance rating.` : "No performance rating recorded.",
+        expertiseMatched
+          ? "Expertise matches the course."
+          : "Selected by rating, availability, and workload because no expertise match was available.",
+        state.rating
+          ? `${state.rating}-star performance rating.`
+          : "No performance rating recorded.",
         `Capacity after assignment: ${state.assigned + 1}/${state.capacity}.`,
-        priorCourseCount ? `Already had ${priorCourseCount} class(es) for this course.` : "No duplicate class for this course before assignment.",
+        priorCourseCount
+          ? `Already had ${priorCourseCount} class(es) for this course.`
+          : "No duplicate class for this course before assignment.",
         riskLabel ? `Risk label: ${riskLabel}.` : "No low-rating risk.",
         warningNote ? `Admin note: ${warningNote}.` : "No admin note recorded.",
         phaseLabel,
@@ -278,54 +649,116 @@ export function buildAutoPilotPlotting(lecturers, courses, classCounts, existing
     return true;
   };
 
-  Array.from({ length: FIVE_STAR_TARGET }, (_, index) => index + 1).forEach((targetLimit) => {
-    slots.forEach((slot) => {
-      if (assignmentMap[slot.course.code][slot.index]) return;
-      assignSlot(slot, chooseCandidate(slot.course, targetLimit, false, (state) => state.rating >= 5), `Five-star fulfillment pass for up to ${FIVE_STAR_TARGET} classes.`);
-    });
-  });
+  Array.from({ length: FIVE_STAR_TARGET }, (_, index) => index + 1).forEach(
+    (targetLimit) => {
+      slots.forEach((slot) => {
+        if (assignmentMap[slot.course.code][slot.index]) return;
+        assignSlot(
+          slot,
+          chooseCandidate(
+            slot.course,
+            targetLimit,
+            false,
+            (state) => state.rating >= 5,
+          ),
+          `Five-star fulfillment pass for up to ${FIVE_STAR_TARGET} classes.`,
+        );
+      });
+    },
+  );
 
   [1, EQUAL_DISTRIBUTION_TARGET].forEach((targetLimit) => {
     slots.forEach((slot) => {
       if (assignmentMap[slot.course.code][slot.index]) return;
-      assignSlot(slot, chooseCandidate(slot.course, targetLimit, false), `Equal distribution pass for up to ${targetLimit} class(es), excluding 1-2 star ratings.`);
+      assignSlot(
+        slot,
+        chooseCandidate(slot.course, targetLimit, false),
+        `Equal distribution pass for up to ${targetLimit} class(es), excluding 1-2 star ratings.`,
+      );
     });
   });
 
   [3, LECTURER_CLASS_LIMIT].forEach((targetLimit) => {
     slots.forEach((slot) => {
       if (assignmentMap[slot.course.code][slot.index]) return;
-      assignSlot(slot, chooseCandidate(slot.course, targetLimit, true), `Additional distribution pass for up to ${targetLimit} class(es), using full scoring rules.`);
+      assignSlot(
+        slot,
+        chooseCandidate(slot.course, targetLimit, true),
+        `Additional distribution pass for up to ${targetLimit} class(es), using full scoring rules.`,
+      );
     });
   });
 
-  const metrics = calculateAutoPilotMetrics(lecturers, courses, assignmentMap, preservedAssignmentMap, assignmentExplanations);
-  const eligibleFirstPass = states.filter((state) => state.capacity > 0 && !state.restricted).length;
+  const metrics = calculateAutoPilotMetrics(
+    lecturers,
+    courses,
+    assignmentMap,
+    preservedAssignmentMap,
+    assignmentExplanations,
+  );
+  const eligibleFirstPass = states.filter(
+    (state) => state.capacity > 0 && !state.restricted,
+  ).length;
   const fiveStarLecturers = states.filter((state) => state.rating >= 5);
-  const underTargetFiveStarLecturers = fiveStarLecturers.filter((state) => state.assigned < Math.min(FIVE_STAR_TARGET, state.capacity));
+  const underTargetFiveStarLecturers = fiveStarLecturers.filter(
+    (state) => state.assigned < Math.min(FIVE_STAR_TARGET, state.capacity),
+  );
   const restrictedLecturers = states.filter((state) => state.restricted);
   const unratedLecturers = states.filter((state) => !state.rating);
-  const fullLecturers = states.filter((state) => state.assigned >= state.capacity && state.capacity > 0);
+  const fullLecturers = states.filter(
+    (state) => state.assigned >= state.capacity && state.capacity > 0,
+  );
   const unassignedByCourse = plannedCourses
-    .map((course) => ({ course, count: (assignmentMap[course.code] || []).filter((id) => !id).length }))
+    .map((course) => ({
+      course,
+      count: (assignmentMap[course.code] || []).filter((id) => !id).length,
+    }))
     .filter((item) => item.count > 0);
 
   const reviewNotes = [
     `Auto-pilot preserved ${metrics.preservedCount} existing assignment(s) and filled ${metrics.newlyAssignedCount} open class slot(s).`,
     useAvailabilityFallback ? AUTO_PILOT_AVAILABILITY_FALLBACK_NOTE : "",
     `Total result: ${metrics.assignedCount} of ${metrics.plannedCount} planned classes assigned with a ${LECTURER_CLASS_LIMIT}-class lecturer cap and a 1-class limit for lecturers below 3 stars.`,
-    fiveStarLecturers.length ? `Five-star lecturers were prioritized toward ${FIVE_STAR_TARGET} classes each before the general distribution passes.` : "",
+    fiveStarLecturers.length
+      ? `Five-star lecturers were prioritized toward ${FIVE_STAR_TARGET} classes each before the general distribution passes.`
+      : "",
     `First pass prioritized ${eligibleFirstPass} lecturers for up to ${EQUAL_DISTRIBUTION_TARGET} classes each; only lecturers with at least 3 stars can receive 2 or more classes.`,
     `Expertise matched ${metrics.expertiseMatchCount} assigned ${metrics.expertiseMatchCount === 1 ? "class" : "classes"} (${metrics.expertiseMatchRate}%); remaining choices used rating, available capacity, and current plotted load.`,
   ].filter(Boolean);
-  if (underTargetFiveStarLecturers.length) reviewNotes.push(`${underTargetFiveStarLecturers.length} five-star lecturer(s) could not reach ${FIVE_STAR_TARGET} classes because of available capacity or planned slot limits: ${underTargetFiveStarLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${Math.min(FIVE_STAR_TARGET, state.capacity)})`).join(", ")}.`);
-  if (restrictedLecturers.length) reviewNotes.push(`${restrictedLecturers.length} lecturer(s) with 1-2 star ratings were capped at 1 class: ${restrictedLecturers.map((state) => state.lecturer.name).join(", ")}.`);
-  if (unratedLecturers.length) reviewNotes.push(`${unratedLecturers.length} unrated lecturer(s) were capped at 1 class until a 3+ star rating is recorded: ${unratedLecturers.map((state) => state.lecturer.name).join(", ")}.`);
-  if (fullLecturers.length) reviewNotes.push(`${fullLecturers.length} lecturer(s) reached their available/capacity limit: ${fullLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${state.capacity})`).join(", ")}.`);
-  if (unassignedByCourse.length) reviewNotes.push(`Manual review needed for unassigned classes: ${unassignedByCourse.map(({ course, count }) => `${course.code} ${course.title} (${count})`).join("; ")}.`);
-  if (!metrics.plannedCount) reviewNotes.push("No planned classes were found. Set planned class counts before running auto-pilot.");
-  unassignedByCourse.forEach(({ course, count }) => conflictWarningSet.add(`${course.code} ${course.title} still has ${count} unassigned planned class(es).`));
-  metrics.overLimitLecturers.forEach((item) => conflictWarningSet.add(`${item.name} has ${item.load} assignment(s), above their ${item.classLimit}-class rating limit.`));
+  if (underTargetFiveStarLecturers.length)
+    reviewNotes.push(
+      `${underTargetFiveStarLecturers.length} five-star lecturer(s) could not reach ${FIVE_STAR_TARGET} classes because of available capacity or planned slot limits: ${underTargetFiveStarLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${Math.min(FIVE_STAR_TARGET, state.capacity)})`).join(", ")}.`,
+    );
+  if (restrictedLecturers.length)
+    reviewNotes.push(
+      `${restrictedLecturers.length} lecturer(s) with 1-2 star ratings were capped at 1 class: ${restrictedLecturers.map((state) => state.lecturer.name).join(", ")}.`,
+    );
+  if (unratedLecturers.length)
+    reviewNotes.push(
+      `${unratedLecturers.length} unrated lecturer(s) were capped at 1 class until a 3+ star rating is recorded: ${unratedLecturers.map((state) => state.lecturer.name).join(", ")}.`,
+    );
+  if (fullLecturers.length)
+    reviewNotes.push(
+      `${fullLecturers.length} lecturer(s) reached their available/capacity limit: ${fullLecturers.map((state) => `${state.lecturer.name} (${state.assigned}/${state.capacity})`).join(", ")}.`,
+    );
+  if (unassignedByCourse.length)
+    reviewNotes.push(
+      `Manual review needed for unassigned classes: ${unassignedByCourse.map(({ course, count }) => `${course.code} ${course.title} (${count})`).join("; ")}.`,
+    );
+  if (!metrics.plannedCount)
+    reviewNotes.push(
+      "No planned classes were found. Set planned class counts before running auto-pilot.",
+    );
+  unassignedByCourse.forEach(({ course, count }) =>
+    conflictWarningSet.add(
+      `${course.code} ${course.title} still has ${count} unassigned planned class(es).`,
+    ),
+  );
+  metrics.overLimitLecturers.forEach((item) =>
+    conflictWarningSet.add(
+      `${item.name} has ${item.load} assignment(s), above their ${item.classLimit}-class rating limit.`,
+    ),
+  );
 
   return {
     assignmentMap,

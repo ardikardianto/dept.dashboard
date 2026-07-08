@@ -40,6 +40,15 @@ department-dashboard/
 |   `-- icons.svg
 |-- src/
 |   |-- App.jsx
+|   |-- features/
+|   |   |-- AuthScreens.jsx
+|   |   |-- CatalogFeatures.jsx
+|   |   |-- DirectoryFeatures.jsx
+|   |   `-- Plotting.jsx
+|   |-- lib/
+|   |   |-- autoPilot.js
+|   |   |-- database.js
+|   |   `-- importExport.js
 |   |-- main.jsx
 |   `-- index.css
 |-- supabase-public-profile-views.sql
@@ -51,7 +60,7 @@ department-dashboard/
 `-- vite.config.js
 ```
 
-Most of the app logic currently lives in `src/App.jsx`. Styling is mostly handled through Tailwind utility classes plus mobile overrides in `src/index.css`.
+`src/App.jsx` owns application state and synchronization orchestration. Authentication, feature screens, plotting, database access, import review, and auto-plotting rules are separated into the `features` and `lib` modules. Styling is mostly handled through Tailwind utility classes plus mobile overrides in `src/index.css`.
 
 ## Requirements
 
