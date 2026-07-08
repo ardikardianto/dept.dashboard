@@ -446,6 +446,24 @@ function buildLecturerExportRows(lecturers, courses) {
   }));
 }
 
+const LECTURER_EXPORT_COLUMNS = [
+  "Lecturer_ID",
+  "Name",
+  "Degree",
+  "Email",
+  "Phone",
+  "Rating",
+  "Warning_Note",
+  "Expertise",
+  "Plotted_Course_Codes",
+  "Plotted_Course_Names",
+  "Available_Slots",
+];
+
+function buildLecturerTemplateRows() {
+  return [Object.fromEntries(LECTURER_EXPORT_COLUMNS.map((column) => [column, ""]))];
+}
+
 function getPlottedCountData(lecturers) {
   return Object.entries(lecturers.reduce((acc, lecturer) => {
     const label = plottedCourseCountLabel(lecturer.plotted.length);
@@ -478,6 +496,7 @@ function runTests() {
   console.assert(exportRows.length === testLecturers.length, "Export row count should match lecturer count");
   console.assert(exportRows[0].Plotted_Course_Names.includes("Basic Reading"), "Export should include plotted course names");
   console.assert(exportRows[1].Rating === 3 && exportRows[1].Warning_Note === "Needs follow-up", "Export should include lecturer labels");
+  console.assert(Object.keys(buildLecturerTemplateRows()[0]).join(",") === LECTURER_EXPORT_COLUMNS.join(","), "Lecturer template should include the import/export columns");
   console.assert(plottedCourseTitles(testLecturers[0], testCourses).includes("Basic Reading"), "Lecturer display should resolve plotted course names");
   console.assert(plottedCourseCountLabel(1) === "1 plotted course", "Singular label should work");
   console.assert(plottedCourseCountLabel(2) === "2 plotted courses", "Plural label should work");
@@ -551,16 +570,42 @@ function runTests() {
 	}
 runTests();
 
-function downloadBlob(filename, content, type) {
-  const blob = new Blob([content], { type });
+async function writeBlobWithFileSystemAccess(filename, blob, type) {
+  if (typeof window === "undefined" || !window.showSaveFilePicker || !window.isSecureContext) return false;
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [{ description: "Spreadsheet", accept: { [type]: [".xlsx"] } }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (error) {
+    if (error?.name === "AbortError") return true;
+    return false;
+  }
+}
+
+function triggerAnchorDownload(filename, blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
   document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  window.setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 60_000);
+}
+
+async function downloadBlob(filename, content, type) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
+  if (await writeBlobWithFileSystemAccess(filename, blob, type)) return;
+  triggerAnchorDownload(filename, blob);
 }
 
 const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -693,6 +738,11 @@ function exportLecturersToXLSX(lecturers, courses) {
     return;
   }
   downloadBlob(`UT_English_Lecturers_${filenameDate}.xlsx`, createXLSX(rows), xlsxContentType);
+}
+
+function exportLecturerTemplateToXLSX() {
+  const filenameDate = new Date().toISOString().slice(0, 10);
+  downloadBlob(`UT_English_Lecturers_Template_${filenameDate}.xlsx`, createXLSX(buildLecturerTemplateRows()), xlsxContentType);
 }
 
 function exportPlottingToXLSX(lecturers, courses, plannedCounts, assignmentMap) {
@@ -1644,7 +1694,7 @@ function Lecturers({ lecturers, directoryLecturers, setLecturers, setTermLecture
     setMobileSearchOpen(true);
   };
   const remove = (id) => setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
-  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary"><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, warning, rating, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table lecturer-directory-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("Rating", "rating")}</th><th className="px-4 py-4 font-medium">Notice</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4"><RatingStars rating={lecturer.rating} onChange={(rating) => rateLecturer(lecturer.id, rating)} /></td><td className="px-4 py-4"><WarningNotice note={lecturer.warning_note} /></td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} onRatingChange={(rating) => rateLecturer(viewing.id, rating)} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} expertiseOptions={expertiseOptions} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
+  return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-3"><input ref={importInputRef} type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" onChange={handleImport} /><Button variant="secondary" onClick={exportLecturerTemplateToXLSX}><Icons.download className="h-4 w-4" />Template</Button><Button variant="secondary" onClick={() => importInputRef.current?.click()}><Icons.download className="h-4 w-4" />Import CSV / XLSX</Button><Button variant="secondary" onClick={() => exportLecturersToXLSX(rows, courses)} disabled={rows.length === 0}><Icons.download className="h-4 w-4" />Export XLSX</Button><Button onClick={() => setModal({})}><Icons.plus className="h-4 w-4" />Add lecturer</Button></div>{importMessage && <p className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{importMessage}</p>}<Card className="lecturer-filter-card p-4"><TextInput icon={Icons.search} value={query} onChange={setQuery} placeholder="Search by ID, name, email, expertise, warning, rating, or course name..." />{lecturerFilterControls}</Card><div className={`mobile-filter-fab mobile-lecturer-fabs ${mobileFiltersVisible ? "is-visible" : "is-hidden"}`}><div className={`mobile-filter-fab__group ${mobileFiltersOpen ? "is-open" : ""}`}><div className="mobile-filter-fab__panel">{mobileLecturerFilterRail}</div><button type="button" className="mobile-filter-fab__button" onClick={() => setMobileFiltersOpen((open) => !open)} aria-expanded={mobileFiltersOpen} aria-label="Toggle lecturer filters and sort"><Icons.chart className="h-5 w-5" /><span>Filters</span></button></div><button type="button" className="mobile-filter-fab__button" onClick={openMobileSearch} aria-label="Search lecturers"><Icons.search className="h-5 w-5" /><span>Search</span></button></div>{mobileSearchOpen && <div className="mobile-search-modal" onClick={() => setMobileSearchOpen(false)}><form className="mobile-search-card" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); setMobileSearchOpen(false); }}><div className="mobile-search-card__header"><strong>Search</strong><button type="button" onClick={() => setMobileSearchOpen(false)} aria-label="Close search"><Icons.x className="h-4 w-4" /></button></div><label className="mobile-search-card__input"><Icons.search className="h-4 w-4" /><input ref={mobileSearchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search lecturers..." /></label><div className="mobile-search-card__actions">{query && <button type="button" onClick={() => setQuery("")}>Clear</button>}<button type="submit">Done</button></div></form></div>}<Card className="mobile-card-table lecturer-directory-table overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="bg-slate-50 text-[10px] uppercase tracking-[0.15em] text-slate-500"><tr><th className="px-4 py-4">{sortHeader("ID", "id")}</th><th className="px-4 py-4">{sortHeader("Degree", "degree")}</th><th className="px-4 py-4">{sortHeader("Full Name", "name")}</th><th className="px-4 py-4">{sortHeader("Rating", "rating")}</th><th className="px-4 py-4 font-medium">Notice</th><th className="px-4 py-4">{sortHeader("#Plotted", "plotted")}</th><th className="px-4 py-4">{sortHeader("Available", "available")}</th><th className="px-4 py-4 font-medium">Expertise</th><th className="px-4 py-4 font-medium">Plotted Courses</th><th className="px-4 py-4 font-medium">Actions</th></tr></thead><tbody>{rows.map((lecturer) => <tr key={lecturer.id} className="border-t border-slate-100"><td className="px-4 py-4 font-normal text-blue-700">{lecturer.id}</td><td className="px-4 py-4"><Badge tone="slate">{lecturer.degree}</Badge></td><td className="px-4 py-4 font-medium text-slate-900">{lecturer.name}</td><td className="px-4 py-4"><RatingStars rating={lecturer.rating} onChange={(rating) => rateLecturer(lecturer.id, rating)} /></td><td className="px-4 py-4"><WarningNotice note={lecturer.warning_note} /></td><td className="px-4 py-4 font-normal">{lecturer.plotted.length}</td><td className="px-4 py-4"><Badge tone={availabilityTone(lecturer.available)}>{lecturer.available}</Badge></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{lecturer.expertise.map((item) => <Badge key={item}>{item}</Badge>)}</div></td><td className="px-4 py-4 text-xs font-normal text-slate-600"><div className="flex max-w-md flex-wrap gap-1"><PlottedCourseBadges plotted={lecturer.plotted} courses={courses} /></div></td><td className="px-4 py-4"><div className="flex gap-3"><button title="View lecturer information" onClick={() => setViewing(lecturer)}><Icons.eye className="h-4 w-4 text-blue-700" /></button><button title="Edit lecturer" onClick={() => { const directoryLecturer = directoryById.get(lecturer.id) || lecturer; setModal({ ...directoryLecturer, available: lecturer.available, plotted: lecturer.plotted, expertiseText: directoryLecturer.expertise.join(", ") }); }}><Icons.edit className="h-4 w-4" /></button><button title="Delete lecturer" onClick={() => remove(lecturer.id)}><Icons.trash className="h-4 w-4 text-red-500" /></button></div></td></tr>)}</tbody></table></div>{rows.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No lecturers match your search/filter.</p>}</Card>{viewing && <Modal title="Lecturer Information" onClose={() => setViewing(null)}><LecturerInfoCard lecturer={viewing} courses={courses} onRatingChange={(rating) => rateLecturer(viewing.id, rating)} /></Modal>}{modal && <Modal title={modal.id ? "Edit lecturer" : "Add lecturer"} onClose={() => setModal(null)}><LecturerForm initial={modal.id ? modal : null} expertiseOptions={expertiseOptions} onSave={save} onClose={() => setModal(null)} /></Modal>}</div>;
 }
 
 function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseClassPlans, setCourseClassPlans }) {
@@ -2325,6 +2375,10 @@ export default function App() {
   const [canSyncLecturerLabels, setCanSyncLecturerLabels] = useState(false);
   const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
+  const syncPayloadRef = useRef(null);
+  const syncRevisionRef = useRef(0);
+  const syncedRevisionRef = useRef(0);
+  const syncTimerRef = useRef(null);
   const setHydrated = useCallback((value) => {
     hydratedRef.current = value;
     setIsHydrated(value);
@@ -2441,25 +2495,52 @@ export default function App() {
   }, [lecturers, termPlottings]);
 
   useEffect(() => {
-    if (isDemoSession || !USE_SUPABASE || !userEmail || !hydratedRef.current || syncingRef.current) return;
-    const timer = window.setTimeout(async () => {
+    if (isDemoSession || !USE_SUPABASE || !userEmail || !hydratedRef.current) return undefined;
+
+    syncRevisionRef.current += 1;
+    syncPayloadRef.current = {
+      lecturers,
+      courses,
+      terms,
+      termPlottings: validTermPlottings,
+      canSyncLecturerLabels,
+    };
+    const scheduledRevision = syncRevisionRef.current;
+
+    const runSync = async () => {
+      if (syncingRef.current) return;
+      const payload = syncPayloadRef.current;
+      const startedRevision = syncRevisionRef.current;
+      if (!payload || startedRevision <= syncedRevisionRef.current) return;
+
       try {
         syncingRef.current = true;
         setDbStatus("Saving...");
         await Promise.all([
-          syncTable("lecturers", serializeLecturersForDatabase(lecturers, canSyncLecturerLabels), "id"),
-          syncTable("courses", courses, "code"),
-          syncTable("academic_terms", terms, "code"),
-          syncTable("term_plottings", validTermPlottings, "id"),
+          syncTable("lecturers", serializeLecturersForDatabase(payload.lecturers, payload.canSyncLecturerLabels), "id"),
+          syncTable("courses", payload.courses, "code"),
+          syncTable("academic_terms", payload.terms, "code"),
+          syncTable("term_plottings", payload.termPlottings, "id"),
         ]);
+        syncedRevisionRef.current = startedRevision;
         setDbStatus("Supabase connected");
       } catch (error) {
+        syncedRevisionRef.current = startedRevision;
         setDbStatus(error.message || "Database sync failed");
       } finally {
         syncingRef.current = false;
+        if (syncRevisionRef.current > syncedRevisionRef.current) {
+          window.clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = window.setTimeout(runSync, 0);
+        }
       }
-    }, 500);
-    return () => window.clearTimeout(timer);
+    };
+
+    window.clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(runSync, 500);
+    return () => {
+      if (syncRevisionRef.current === scheduledRevision) window.clearTimeout(syncTimerRef.current);
+    };
   }, [lecturers, courses, terms, validTermPlottings, userEmail, isDemoSession, canSyncLecturerLabels]);
 
   const handleLogin = (email) => {
