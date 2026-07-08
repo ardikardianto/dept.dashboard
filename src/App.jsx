@@ -62,6 +62,12 @@ const plottedCourseCountLabel = (count) => `${count} plotted ${count === 1 ? "co
 const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
 const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 99;
 const COURSE_CLASS_PLANS_STORAGE_KEY = "ut_course_class_plans";
+const PENDING_SYNC_STORAGE_KEY = "ut_pending_sync_v1";
+const ACCESS_TOKEN_STORAGE_KEY = "ut_supabase_access_token";
+const REFRESH_TOKEN_STORAGE_KEY = "ut_supabase_refresh_token";
+const ACCESS_TOKEN_EXPIRES_AT_STORAGE_KEY = "ut_supabase_access_token_expires_at";
+const SYNC_RETRY_INITIAL_DELAY = 2_000;
+const SYNC_RETRY_MAX_DELAY = 60_000;
 
 const DEMO_COURSES = [
   { code: "BING4110", title: "Basic Reading", credits: 3 },
@@ -156,6 +162,47 @@ function getStoredCourseClassPlans() {
   } catch {
     return {};
   }
+}
+
+function normalizeCourseClassPlans(rows = []) {
+  return Object.fromEntries(rows.map((row) => [
+    String(row.term_code || ""),
+    {
+      counts: row.counts && typeof row.counts === "object" ? row.counts : {},
+      assignments: row.assignments && typeof row.assignments === "object" ? row.assignments : {},
+    },
+  ]).filter(([termCode]) => termCode));
+}
+
+function serializeCourseClassPlans(courseClassPlans = {}, terms = []) {
+  const termCodes = new Set(terms.map((term) => term.code));
+  return Object.entries(courseClassPlans)
+    .filter(([termCode]) => termCode && termCodes.has(termCode))
+    .map(([termCode, plan]) => {
+      const { counts, assignments } = getCoursePlanParts({ [termCode]: plan }, termCode);
+      return { term_code: termCode, counts, assignments };
+    });
+}
+
+function getStoredPendingSync(userEmail) {
+  if (typeof localStorage === "undefined" || !userEmail) return null;
+  try {
+    const stored = JSON.parse(localStorage.getItem(PENDING_SYNC_STORAGE_KEY) || "null");
+    return stored?.userEmail === userEmail && stored.payload ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function storePendingSync(userEmail, payload) {
+  if (typeof localStorage === "undefined" || !userEmail) return;
+  localStorage.setItem(PENDING_SYNC_STORAGE_KEY, JSON.stringify({ userEmail, payload, updatedAt: new Date().toISOString() }));
+}
+
+function clearPendingSync(userEmail) {
+  if (typeof localStorage === "undefined") return;
+  const stored = getStoredPendingSync(userEmail);
+  if (stored) localStorage.removeItem(PENDING_SYNC_STORAGE_KEY);
 }
 
 function getCourseClassPlan(courseClassPlans, termCode) {
@@ -579,6 +626,9 @@ function runTests() {
 	  const dedupedImport = dedupeImportedLecturers([{ id: "LECT001", email: "a@example.com", expertise: ["Reading"] }, { id: "LECT001", phone: "0800", expertise: ["Writing"], available: 2, _hasImportedAvailable: true }]);
 	  console.assert(dedupedImport.length === 1 && dedupedImport[0].phone === "0800" && dedupedImport[0].expertise.length === 2 && dedupedImport[0].available === 2, "Lecturer import should merge duplicate IDs before upsert");
 	  console.assert(typeof USE_SUPABASE === "boolean", "Supabase config flag should be boolean");
+  const serializedPlans = serializeCourseClassPlans({ TERM001: { counts: { COURSE101: 2 }, assignments: { COURSE101: ["LECT001", ""] } } }, testTerms);
+  console.assert(serializedPlans.length === 1 && serializedPlans[0].term_code === "TERM001" && serializedPlans[0].counts.COURSE101 === 2, "Course class plans should serialize by academic term");
+  console.assert(normalizeCourseClassPlans(serializedPlans).TERM001.assignments.COURSE101[0] === "LECT001", "Course class plans should round-trip through Supabase rows");
   const demoSnapshot = cloneDemoSnapshot();
   console.assert(demoSnapshot.lecturers.length >= 5 && demoSnapshot.courses.length >= 5, "Demo snapshot should include enough data for presentation");
   console.assert(demoSnapshot.terms.some((term) => term.active), "Demo snapshot should include an active term");
@@ -941,7 +991,16 @@ function mapImportedLecturers(rows, courses) {
 }
 
 function getAccessToken() {
-  return localStorage.getItem("ut_supabase_access_token") || "";
+  return localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) || "";
+}
+
+function saveAuthSession(data, fallbackEmail = "") {
+  if (data.access_token) localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, data.access_token);
+  if (data.refresh_token) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, data.refresh_token);
+  if (data.expires_in) localStorage.setItem(ACCESS_TOKEN_EXPIRES_AT_STORAGE_KEY, String(Date.now() + Number(data.expires_in) * 1000));
+  const email = data.user?.email || fallbackEmail || localStorage.getItem("ut_user_email") || "";
+  if (email) localStorage.setItem("ut_user_email", email);
+  return email;
 }
 
 function supabaseHeaders({ preferReturn = false } = {}) {
@@ -954,14 +1013,53 @@ function supabaseHeaders({ preferReturn = false } = {}) {
   };
 }
 
-async function supabaseRequest(path, options = {}) {
+let refreshSessionPromise = null;
+
+async function refreshAuthSession() {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY) || "";
+  if (!refreshToken) throw new Error("Session expired. Please sign in again.");
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(data.error_description || data.msg || "Session refresh failed.");
+        error.status = 401;
+        throw error;
+      }
+      saveAuthSession(data);
+      return data.access_token;
+    }).finally(() => {
+      refreshSessionPromise = null;
+    });
+  }
+  return refreshSessionPromise;
+}
+
+async function supabaseRequest(path, options = {}, allowRefresh = true) {
   if (!USE_SUPABASE) throw new Error("Supabase is not configured.");
   const response = await fetch(`${SUPABASE_URL}${path}`, options);
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text || null;
+  }
+  if (response.status === 401 && allowRefresh && localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)) {
+    const accessToken = await refreshAuthSession();
+    return supabaseRequest(path, {
+      ...options,
+      headers: { ...(options.headers || {}), Authorization: `Bearer ${accessToken}` },
+    }, false);
+  }
   if (!response.ok) {
-    const error = new Error(data?.message || data?.msg || data?.error_description || "Supabase request failed.");
+    const error = new Error(data?.message || data?.msg || data?.error_description || (typeof data === "string" ? data : "") || "Supabase request failed.");
     error.status = response.status;
+    error.code = data?.code || "";
     throw error;
   }
   return data;
@@ -974,18 +1072,31 @@ async function fetchTable(table, orderBy) {
   });
 }
 
+async function fetchCourseClassPlans() {
+  try {
+    const rows = await fetchTable("course_class_plans", "term_code");
+    return { supported: true, plans: normalizeCourseClassPlans(Array.isArray(rows) ? rows : []) };
+  } catch (error) {
+    if (error.status === 404 || ["42P01", "PGRST205"].includes(error.code)) return { supported: false, plans: {} };
+    throw error;
+  }
+}
+
 async function fetchDatabaseSnapshot() {
-  const [lecturerRows, courseRows, termRows, plottingRows] = await Promise.all([
+  const [lecturerRows, courseRows, termRows, plottingRows, courseClassPlanResult] = await Promise.all([
     fetchTable("lecturers", "name"),
     fetchTable("courses", "code"),
     fetchTable("academic_terms", "code"),
     fetchTable("term_plottings", "id"),
+    fetchCourseClassPlans(),
   ]);
   return {
     lecturers: Array.isArray(lecturerRows) ? lecturerRows.map(normalizeLecturer) : [],
     courses: Array.isArray(courseRows) ? courseRows : [],
     terms: Array.isArray(termRows) ? termRows : [],
     termPlottings: Array.isArray(plottingRows) ? plottingRows.map(normalizeTermPlotting) : [],
+    courseClassPlans: courseClassPlanResult.plans,
+    courseClassPlansSupported: courseClassPlanResult.supported,
   };
 }
 
@@ -1053,14 +1164,14 @@ async function signIn(email, password) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error_description || data.msg || "Login failed.");
-  localStorage.setItem("ut_supabase_access_token", data.access_token);
-  localStorage.setItem("ut_user_email", data.user?.email || email);
-  return data.user?.email || email;
+  return saveAuthSession(data, email);
 }
 
 function signOut() {
   localStorage.removeItem("ut_user_email");
-  localStorage.removeItem("ut_supabase_access_token");
+  localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(ACCESS_TOKEN_EXPIRES_AT_STORAGE_KEY);
 }
 
 function getStoredUserEmail() {
@@ -1548,8 +1659,16 @@ function Stat({ label, value, icon: Icon, tone = "blue", note }) {
   return <Card className={`p-5 ${tone === "amber" ? "border-[#f0d264] bg-[#fff9df]" : ""}`}><div className="flex items-start justify-between"><div><p className="text-xs font-medium uppercase tracking-[0.2em] text-[#315577]">{label}</p><p className="mt-3 text-4xl font-light text-[#102f52]">{value}</p>{note && <p className="mt-1 text-xs font-normal text-[#4f6478]">{note}</p>}</div><div className={`rounded-xl p-3 ${tone === "amber" ? "bg-[#ffd23f] text-[#102f52]" : "bg-[#eef5ff] text-[#005baa]"}`}><Icon /></div></div></Card>;
 }
 
-function SupabaseStatusIcon({ connected, label }) {
-  return <span title={label} aria-label={label} role="status" className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${connected ? "border-[#c6e3d1] bg-[#dff3e6] text-[#315f45]" : "border-[#f3dda2] bg-[#fff0c2] text-[#71540f]"}`}>{connected ? <Icons.check className="h-4 w-4" /> : <Icons.chart className="h-4 w-4" />}</span>;
+function SupabaseStatusIcon({ state = "idle", label }) {
+  const isSaved = state === "saved";
+  const isError = state === "error" || state === "offline";
+  const className = isSaved
+    ? "border-[#c6e3d1] bg-[#dff3e6] text-[#315f45]"
+    : isError
+      ? "border-[#e8c4b8] bg-[#f8eae4] text-[#a8431f]"
+      : "border-[#f3dda2] bg-[#fff0c2] text-[#71540f]";
+  const Icon = isSaved ? Icons.check : isError ? Icons.warning : Icons.chart;
+  return <span title={label} aria-label={label} role="status" className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${className}`}><Icon className="h-4 w-4" /></span>;
 }
 
 function Dashboard({ lecturers, courses }) {
@@ -2392,14 +2511,18 @@ export default function App() {
   const [courseClassPlans, setCourseClassPlans] = useState(getStoredCourseClassPlans);
   const [selectedTermCode, setSelectedTermCode] = useState("");
   const [dbStatus, setDbStatus] = useState(USE_SUPABASE ? "Signed out" : "Supabase not configured");
+  const [syncState, setSyncState] = useState("idle");
   const [isHydrated, setIsHydrated] = useState(false);
   const [canSyncLecturerLabels, setCanSyncLecturerLabels] = useState(false);
+  const [canSyncCourseClassPlans, setCanSyncCourseClassPlans] = useState(false);
+  const [syncWakeSignal, setSyncWakeSignal] = useState(0);
   const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
   const syncPayloadRef = useRef(null);
   const syncRevisionRef = useRef(0);
   const syncedRevisionRef = useRef(0);
   const syncTimerRef = useRef(null);
+  const syncRetryDelayRef = useRef(SYNC_RETRY_INITIAL_DELAY);
   const setHydrated = useCallback((value) => {
     hydratedRef.current = value;
     setIsHydrated(value);
@@ -2425,7 +2548,9 @@ export default function App() {
         setCourseClassPlans(cloneDemoCourseClassPlans());
         setSelectedTermCode("DEMO-2026-1");
         setCanSyncLecturerLabels(true);
+        setCanSyncCourseClassPlans(true);
         setHydrated(true);
+        setSyncState("saved");
         setDbStatus("Demo data loaded");
         return;
       }
@@ -2439,15 +2564,30 @@ export default function App() {
       }
       try {
         setHydrated(false);
+        setSyncState("loading");
         setDbStatus("Loading database...");
         const [snapshot, lecturerLabelsSupported] = await Promise.all([fetchDatabaseSnapshot(), fetchLecturerLabelColumnSupport()]);
         if (cancelled) return;
         setCanSyncLecturerLabels(lecturerLabelsSupported);
-        applyDatabaseSnapshot(snapshot);
+        setCanSyncCourseClassPlans(snapshot.courseClassPlansSupported);
+        const pendingSync = getStoredPendingSync(userEmail);
+        if (pendingSync?.payload) {
+          applyDatabaseSnapshot(pendingSync.payload);
+          setCourseClassPlans(pendingSync.payload.courseClassPlans || getStoredCourseClassPlans());
+        } else {
+          applyDatabaseSnapshot(snapshot);
+          setCourseClassPlans({ ...getStoredCourseClassPlans(), ...snapshot.courseClassPlans });
+        }
         setHydrated(true);
-        setDbStatus(lecturerLabelsSupported ? "Supabase connected" : "Supabase connected. Run lecturer labels SQL to save ratings and warning notes.");
+        setSyncState(pendingSync ? "pending" : "saved");
+        const setupNotes = [
+          !lecturerLabelsSupported ? "Run lecturer labels SQL to save ratings and warning notes." : "",
+          !snapshot.courseClassPlansSupported ? "Run course class plans SQL to sync plotting plans." : "",
+        ].filter(Boolean);
+        setDbStatus(pendingSync ? "Unsaved changes restored. Saving..." : setupNotes.length ? `Supabase connected. ${setupNotes.join(" ")}` : "All changes saved");
       } catch (error) {
         setHydrated(false);
+        setSyncState("error");
         if (error.status === 401 || error.status === 403) {
           signOut();
           setUserEmail("");
@@ -2457,6 +2597,7 @@ export default function App() {
         setTermPlottings([]);
         setSelectedTermCode("");
         setCanSyncLecturerLabels(false);
+        setCanSyncCourseClassPlans(false);
         setDbStatus("Session expired. Please sign in again.");
           return;
         }
@@ -2475,13 +2616,16 @@ export default function App() {
     }
     try {
       setHydrated(false);
+      setSyncState("loading");
       setDbStatus("Loading public directory...");
       const snapshot = await fetchPublicDatabaseSnapshot();
       applyDatabaseSnapshot(snapshot);
       setHydrated(true);
+      setSyncState("saved");
       setDbStatus("Public directory ready");
     } catch (error) {
       setHydrated(false);
+      setSyncState("error");
       setDbStatus(error.message || "Public directory load failed");
     }
   }, [applyDatabaseSnapshot, setHydrated]);
@@ -2508,6 +2652,15 @@ export default function App() {
     localStorage.setItem(COURSE_CLASS_PLANS_STORAGE_KEY, JSON.stringify(courseClassPlans));
   }, [courseClassPlans, isDemoSession]);
 
+  useEffect(() => {
+    const wakeSync = () => {
+      syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
+      setSyncWakeSignal((value) => value + 1);
+    };
+    window.addEventListener("online", wakeSync);
+    return () => window.removeEventListener("online", wakeSync);
+  }, []);
+
   const activeTermCode = terms.find((term) => term.active)?.code || "";
   const effectiveSelectedTermCode = terms.some((term) => term.code === selectedTermCode) ? selectedTermCode : activeTermCode || terms[0]?.code || "";
   const validTermPlottings = useMemo(() => {
@@ -2524,8 +2677,13 @@ export default function App() {
       courses,
       terms,
       termPlottings: validTermPlottings,
+      courseClassPlans,
       canSyncLecturerLabels,
+      canSyncCourseClassPlans,
     };
+    storePendingSync(userEmail, syncPayloadRef.current);
+    setSyncState(navigator.onLine ? "pending" : "offline");
+    setDbStatus(navigator.onLine ? "Unsaved changes queued" : "Offline. Changes are safely queued on this device.");
     const scheduledRevision = syncRevisionRef.current;
 
     const runSync = async () => {
@@ -2533,24 +2691,51 @@ export default function App() {
       const payload = syncPayloadRef.current;
       const startedRevision = syncRevisionRef.current;
       if (!payload || startedRevision <= syncedRevisionRef.current) return;
+      if (!navigator.onLine) {
+        setSyncState("offline");
+        setDbStatus("Offline. Changes are safely queued on this device.");
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = window.setTimeout(runSync, syncRetryDelayRef.current);
+        syncRetryDelayRef.current = Math.min(syncRetryDelayRef.current * 2, SYNC_RETRY_MAX_DELAY);
+        return;
+      }
 
+      let failed = false;
       try {
         syncingRef.current = true;
-        setDbStatus("Saving...");
+        setSyncState("saving");
+        setDbStatus("Saving changes...");
         await Promise.all([
           syncTable("lecturers", serializeLecturersForDatabase(payload.lecturers, payload.canSyncLecturerLabels), "id"),
           syncTable("courses", payload.courses, "code"),
           syncTable("academic_terms", payload.terms, "code"),
-          syncTable("term_plottings", payload.termPlottings, "id"),
         ]);
+        const dependentSyncOperations = [
+          syncTable("term_plottings", payload.termPlottings, "id"),
+        ];
+        if (payload.canSyncCourseClassPlans) {
+          dependentSyncOperations.push(syncTable("course_class_plans", serializeCourseClassPlans(payload.courseClassPlans, payload.terms), "term_code"));
+        }
+        await Promise.all(dependentSyncOperations);
         syncedRevisionRef.current = startedRevision;
-        setDbStatus("Supabase connected");
+        syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
+        if (syncRevisionRef.current === startedRevision) {
+          const allDataTypesSupported = payload.canSyncLecturerLabels && payload.canSyncCourseClassPlans;
+          if (allDataTypesSupported) clearPendingSync(userEmail);
+          setSyncState(allDataTypesSupported ? "saved" : "pending");
+          setDbStatus(allDataTypesSupported ? "All changes saved" : "Core data saved; unsupported fields remain queued until the required Supabase SQL is installed.");
+        }
       } catch (error) {
-        syncedRevisionRef.current = startedRevision;
-        setDbStatus(error.message || "Database sync failed");
+        failed = true;
+        setSyncState(navigator.onLine ? "error" : "offline");
+        setDbStatus(navigator.onLine ? `${error.message || "Database sync failed"}. Retrying automatically...` : "Offline. Changes are safely queued on this device.");
       } finally {
         syncingRef.current = false;
-        if (syncRevisionRef.current > syncedRevisionRef.current) {
+        if (failed) {
+          window.clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = window.setTimeout(runSync, syncRetryDelayRef.current);
+          syncRetryDelayRef.current = Math.min(syncRetryDelayRef.current * 2, SYNC_RETRY_MAX_DELAY);
+        } else if (syncRevisionRef.current > syncedRevisionRef.current) {
           window.clearTimeout(syncTimerRef.current);
           syncTimerRef.current = window.setTimeout(runSync, 0);
         }
@@ -2562,7 +2747,7 @@ export default function App() {
     return () => {
       if (syncRevisionRef.current === scheduledRevision) window.clearTimeout(syncTimerRef.current);
     };
-  }, [lecturers, courses, terms, validTermPlottings, userEmail, isDemoSession, canSyncLecturerLabels]);
+  }, [lecturers, courses, terms, validTermPlottings, courseClassPlans, userEmail, isDemoSession, canSyncLecturerLabels, canSyncCourseClassPlans, syncWakeSignal]);
 
   const handleLogin = (email) => {
     setHydrated(false);
@@ -2586,7 +2771,9 @@ export default function App() {
     setTermPlottings([]);
     setCourseClassPlans(getStoredCourseClassPlans());
     setCanSyncLecturerLabels(false);
+    setCanSyncCourseClassPlans(false);
     setSelectedTermCode("");
+    setSyncState("idle");
     setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
   };
 
@@ -2609,5 +2796,5 @@ export default function App() {
   if (entryMode === "public") return <PublicLookupScreen lecturers={lecturers} courses={courses} terms={terms} termPlottings={termPlottings} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} dbStatus={dbStatus} isHydrated={isHydrated} onBack={() => setEntryMode("landing")} onLogin={() => setEntryMode("login")} onRefresh={loadPublicDirectory} />;
   if (!userEmail) return <LoginScreen onLogin={handleLogin} onDemoLogin={handleDemoLogin} onBack={() => setEntryMode("landing")} />;
 
-  return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><SupabaseStatusIcon connected={isHydrated} label={dbStatus} /><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
+  return <div className="min-h-screen bg-white pb-48 text-[#102f52] sm:pb-32"><main className="min-w-0 p-3 sm:p-6 lg:p-10"><div className="mx-auto max-w-7xl"><div className="mb-4 flex flex-wrap items-center justify-end gap-3"><SupabaseStatusIcon state={syncState} label={dbStatus} /><span className="max-w-xs truncate text-xs font-medium text-[#4f6478]" title={dbStatus}>{dbStatus}</span><Badge tone="slate">{userEmail}</Badge></div><Header active={active} terms={terms} selectedTermCode={effectiveSelectedTermCode} setSelectedTermCode={setSelectedTermCode} /><motion.div key={`${active}-${effectiveSelectedTermCode}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}><Page {...props} /></motion.div></div></main><FloatingBottomNav active={active} setActive={setActive} onLogout={handleLogout} /></div>;
 }

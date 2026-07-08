@@ -45,6 +45,7 @@ department-dashboard/
 |-- supabase-public-profile-views.sql
 |-- supabase-lecturer-labels.sql
 |-- supabase-term-plottings.sql
+|-- supabase-course-class-plans.sql
 |-- index.html
 |-- package.json
 `-- vite.config.js
@@ -120,6 +121,7 @@ The app expects four main tables:
 - `courses`
 - `academic_terms`
 - `term_plottings`
+- `course_class_plans`
 
 Create the first three tables in Supabase SQL Editor if they do not already exist:
 
@@ -157,6 +159,14 @@ supabase-term-plottings.sql
 ```
 
 This creates the `term_plottings` table and row-level security policies for authenticated users.
+
+Run the class-plan SQL as well:
+
+```bash
+supabase-course-class-plans.sql
+```
+
+This moves planned class counts and exact class-to-lecturer assignments from browser-only storage into Supabase. Existing local plans are retained and uploaded after the table becomes available.
 
 To store lecturer ratings and warning notes, run:
 
