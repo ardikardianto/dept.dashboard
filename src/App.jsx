@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart as RePieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { LECTURER_CLASS_LIMIT, buildAutoPilotPlotting, expertiseMatchesCourse } from "./lib/autoPilot.js";
+import { LECTURER_CLASS_LIMIT, buildAutoPilotPlotting, expertiseMatchesCourse, getLecturerRatingClassLimit } from "./lib/autoPilot.js";
 
 function IconBase({ children, className = "h-5 w-5", ...props }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>{children}</svg>;
@@ -202,19 +202,25 @@ function countLecturerAssignments(assignmentMap = {}, lecturerId) {
   return Object.values(assignmentMap).reduce((sum, ids) => sum + (Array.isArray(ids) ? ids.filter((id) => id === lecturerId).length : 0), 0);
 }
 
-function limitAssignmentMapByLecturer(assignmentMap = {}) {
+function getLecturerClassLimitLookup(lecturers = []) {
+  return new Map(lecturers.map((lecturer) => [lecturer.id, getLecturerRatingClassLimit(lecturer)]));
+}
+
+function limitAssignmentMapByLecturer(assignmentMap = {}, lecturers = []) {
+  const lecturerClassLimits = getLecturerClassLimitLookup(lecturers);
   const lecturerCounts = {};
   return Object.fromEntries(Object.entries(assignmentMap).map(([courseCode, ids]) => [courseCode, (Array.isArray(ids) ? ids : []).map((lecturerId) => {
     if (!lecturerId) return "";
     lecturerCounts[lecturerId] = lecturerCounts[lecturerId] || 0;
-    if (lecturerCounts[lecturerId] >= LECTURER_CLASS_LIMIT) return "";
+    if (lecturerCounts[lecturerId] >= (lecturerClassLimits.get(lecturerId) || LECTURER_CLASS_LIMIT)) return "";
     lecturerCounts[lecturerId] += 1;
     return lecturerId;
   })]));
 }
 
-function mergeAssignmentMapWithLecturerLimit(baseAssignmentMap = {}, incomingAssignmentMap = {}) {
+function mergeAssignmentMapWithLecturerLimit(baseAssignmentMap = {}, incomingAssignmentMap = {}, lecturers = []) {
   const incomingCourseCodes = new Set(Object.keys(incomingAssignmentMap));
+  const lecturerClassLimits = getLecturerClassLimitLookup(lecturers);
   const lecturerCounts = {};
   Object.entries(baseAssignmentMap).forEach(([courseCode, ids]) => {
     if (incomingCourseCodes.has(courseCode)) return;
@@ -225,7 +231,7 @@ function mergeAssignmentMapWithLecturerLimit(baseAssignmentMap = {}, incomingAss
   const limitedIncoming = Object.fromEntries(Object.entries(incomingAssignmentMap).map(([courseCode, ids]) => [courseCode, (Array.isArray(ids) ? ids : []).map((lecturerId) => {
     if (!lecturerId) return "";
     lecturerCounts[lecturerId] = lecturerCounts[lecturerId] || 0;
-    if (lecturerCounts[lecturerId] >= LECTURER_CLASS_LIMIT) return "";
+    if (lecturerCounts[lecturerId] >= (lecturerClassLimits.get(lecturerId) || LECTURER_CLASS_LIMIT)) return "";
     lecturerCounts[lecturerId] += 1;
     return lecturerId;
   })]));
@@ -521,13 +527,22 @@ function runTests() {
   ];
   const autoPilotResult = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 3 });
   console.assert(autoPilotResult.assignedCount === 6, "Auto-pilot should assign all classes when capacity exists");
-  console.assert(countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO001") >= 2 && countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO002") >= 2, "Auto-pilot should distribute 2 classes first to eligible lecturers");
+  console.assert(countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO001") + countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO004") === 6, "Auto-pilot should prioritize 5-star lecturers toward 4 classes before general distribution");
+  console.assert(autoPilotResult.reviewNotes.some((note) => note.includes("Five-star lecturers were prioritized")), "Auto-pilot should explain 5-star prioritization");
+  console.assert(countLecturerAssignments(autoPilotResult.assignmentMap, "AUTO003") <= 1, "Auto-pilot should limit 1-2 star lecturers to one class");
+  console.assert(autoPilotLecturers.every((lecturer) => countLecturerAssignments(autoPilotResult.assignmentMap, lecturer.id) < 2 || lecturer.rating >= 3), "Only lecturers with at least 3 stars should receive two or more classes");
+  console.assert(autoPilotResult.reviewNotes.every((note) => !note.includes("warning notes or 1-2 star ratings")), "Warning notes should not restrict auto-pilot assignment");
   console.assert(autoPilotLecturers.every((lecturer) => countLecturerAssignments(autoPilotResult.assignmentMap, lecturer.id) <= LECTURER_CLASS_LIMIT), "Auto-pilot should respect the 4-class lecturer cap");
   console.assert(autoPilotResult.reviewNotes.some((note) => note.includes("Auto-pilot preserved")), "Auto-pilot should provide admin review notes");
   console.assert(autoPilotResult.assignmentExplanations.length === autoPilotResult.assignedCount, "Auto-pilot should explain each assigned class");
-  console.assert(autoPilotResult.conflictWarnings.length > 0, "Auto-pilot should surface warning-note and low-rating conflicts");
+  console.assert(autoPilotResult.conflictWarnings.length > 0, "Auto-pilot should surface low-rating conflicts");
   console.assert(autoPilotResult.metrics.expertiseMatchRate >= 50, "Auto-pilot should report an expertise match rate");
   console.assert(autoPilotResult.metrics.loadDistribution.reduce((sum, item) => sum + item.count, 0) === autoPilotLecturers.length, "Auto-pilot should report workload distribution");
+  const ratingPriorityAutoPilot = buildAutoPilotPlotting([
+    { ...testLecturers[0], id: "RATE004", name: "Four Star Lecturer", expertise: ["Reading"], plotted: [], available: 4, rating: 4, warning_note: "" },
+    { ...testLecturers[1], id: "RATE003", name: "Three Star Lecturer", expertise: ["Reading"], plotted: [], available: 4, rating: 3, warning_note: "" },
+  ], [testCourses[0]], { COURSE101: 1 });
+  console.assert(ratingPriorityAutoPilot.assignmentMap.COURSE101[0] === "RATE004", "Auto-pilot should prioritize 4-star lecturers over 3-star lecturers");
   const preservedAutoPilot = buildAutoPilotPlotting(autoPilotLecturers, testCourses, { COURSE101: 3, COURSE102: 1 }, { COURSE101: ["AUTO004", "", ""], COURSE102: ["AUTO001"] });
   console.assert(preservedAutoPilot.assignmentMap.COURSE101[0] === "AUTO004" && preservedAutoPilot.assignmentMap.COURSE102[0] === "AUTO001", "Auto-pilot should preserve existing plotting assignments");
   console.assert(preservedAutoPilot.metrics.preservedCount === 2, "Auto-pilot should report preserved plotting assignments");
@@ -1748,7 +1763,9 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
     const count = classCounts[courseCode] || 0;
     const nextCourseAssignments = Array.from({ length: count }, (_, index) => assignmentMap[courseCode]?.[index] || "");
     const currentLecturerId = nextCourseAssignments[classIndex] || "";
-    if (lecturerId && lecturerId !== currentLecturerId && countLecturerAssignments(assignmentMap, lecturerId) >= LECTURER_CLASS_LIMIT) return;
+    const lecturer = lecturers.find((item) => item.id === lecturerId);
+    const lecturerLimit = lecturer ? getLecturerRatingClassLimit(lecturer) : LECTURER_CLASS_LIMIT;
+    if (lecturerId && lecturerId !== currentLecturerId && countLecturerAssignments(assignmentMap, lecturerId) >= lecturerLimit) return;
     nextCourseAssignments[classIndex] = lecturerId;
     const nextAssignmentMap = { ...assignmentMap, [courseCode]: nextCourseAssignments };
     setAutoPilotReview(null);
@@ -1777,7 +1794,9 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
     const currentAssignments = assignmentMap[courseCode] || [];
     const currentCount = currentAssignments.filter((id) => id === lecturerId).length;
     const lecturerTotal = countLecturerAssignments(assignmentMap, lecturerId);
-    const maxCountForCourse = currentCount + Math.max(0, LECTURER_CLASS_LIMIT - lecturerTotal);
+    const lecturer = lecturers.find((item) => item.id === lecturerId);
+    const lecturerLimit = lecturer ? getLecturerRatingClassLimit(lecturer) : LECTURER_CLASS_LIMIT;
+    const maxCountForCourse = currentCount + Math.max(0, lecturerLimit - lecturerTotal);
     const requestedCount = Math.min(toClassCount(value), maxCountForCourse);
     if (requestedCount === currentCount) return;
 
@@ -1825,7 +1844,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
       const imported = mapImportedPlottingRows(rawRows, lecturers, courses);
       const importedClassCount = Object.values(imported.counts).reduce((sum, count) => sum + count, 0);
 	      if (!importedClassCount) throw new Error("No valid plotting rows found. Use either ID + Course_Code, or columns Idtutor, Nama, Kelas, and Nama MK.");
-      const nextAssignmentMap = mergeAssignmentMapWithLecturerLimit(assignmentMap, imported.assignments);
+      const nextAssignmentMap = mergeAssignmentMapWithLecturerLimit(assignmentMap, imported.assignments, lecturers);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(prev, selectedTermCode);
         return { ...prev, [selectedTermCode]: { counts: { ...counts, ...imported.counts }, assignments: { ...assignments, ...nextAssignmentMap } } };
@@ -1927,9 +1946,9 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                   <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.expertiseMatchCount} matched assignments</p>
                 </div>
                 <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Risk assignments</p>
-                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.warningAssignmentCount + autoPilotMetrics.lowRatingAssignmentCount}</p>
-                  <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.unratedAssignmentCount} unrated</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Low-rating assignments</p>
+                  <p className="mt-2 text-2xl font-medium text-[#102f52]">{autoPilotMetrics.lowRatingAssignmentCount}</p>
+                  <p className="mt-1 text-xs text-[#61717b]">{autoPilotMetrics.warningAssignmentCount} with notes, {autoPilotMetrics.unratedAssignmentCount} unrated</p>
                 </div>
                 <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
                   <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">Balance spread</p>
@@ -2050,7 +2069,8 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                                     <option value="">Unassigned</option>
                                     {lecturerOptions.map((lecturer) => {
                                       const lecturerTotal = countLecturerAssignments(assignmentMap, lecturer.id);
-                                      const isFull = lecturerTotal >= LECTURER_CLASS_LIMIT && selectedId !== lecturer.id;
+                                      const lecturerLimit = getLecturerRatingClassLimit(lecturer);
+                                      const isFull = lecturerTotal >= lecturerLimit && selectedId !== lecturer.id;
                                       const labelPrefix = isFull ? "Full - " : expertiseMatchesCourse(lecturer, course) ? "Recommended - " : "";
                                       return <option key={lecturer.id} value={lecturer.id} disabled={isFull}>{labelPrefix}{lecturer.name} ({lecturer.id})</option>;
                                     })}
@@ -2155,14 +2175,15 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                       <h3 className="text-xl font-medium text-[#26353f]">{selectedLecturer.name}</h3>
                       <p className="mt-1 text-sm font-normal text-[#61717b]">{selectedLecturer.expertise.join(", ") || "No expertise listed"}</p>
                     </div>
-                    <Badge tone={selectedLecturer.plotted.length >= LECTURER_CLASS_LIMIT ? "amber" : selectedLecturer.plotted.length ? "blue" : "slate"}>{selectedLecturer.plotted.length} / {LECTURER_CLASS_LIMIT} assigned classes</Badge>
+                    <Badge tone={selectedLecturer.plotted.length >= getLecturerRatingClassLimit(selectedLecturer) ? "amber" : selectedLecturer.plotted.length ? "blue" : "slate"}>{selectedLecturer.plotted.length} / {getLecturerRatingClassLimit(selectedLecturer)} assigned classes</Badge>
                   </div>
                 </div>
                 <div className="grid max-h-[56vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
                   {courses.map((course) => {
                     const count = selectedLecturerCourseCounts[course.code] || 0;
                     const lecturerTotal = countLecturerAssignments(assignmentMap, selectedLecturer.id);
-                    const maxCountForCourse = count + Math.max(0, LECTURER_CLASS_LIMIT - lecturerTotal);
+                    const lecturerLimit = getLecturerRatingClassLimit(selectedLecturer);
+                    const maxCountForCourse = count + Math.max(0, lecturerLimit - lecturerTotal);
                     const planned = classCounts[course.code] || 0;
                     const assigned = (assignmentMap[course.code] || []).filter(Boolean).length;
                     return (
@@ -2171,7 +2192,7 @@ function Plotting({ lecturers, setLecturers, courses, selectedTermCode, courseCl
                           <span className="block text-sm font-normal text-[#26353f]">{course.title}</span>
                           <span className="mt-1 block text-xs font-normal text-[#61717b]">{course.code} · {assigned} / {planned} assigned</span>
                         </span>
-                        <input type="number" min="0" max={maxCountForCourse} value={count} onChange={(event) => setLecturerCourseCount(course.code, event.target.value, selectedLecturer.id)} className="w-full rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8] disabled:opacity-50" title={maxCountForCourse === 0 ? "This lecturer already has 4 assigned classes." : undefined} disabled={maxCountForCourse === 0} />
+                        <input type="number" min="0" max={maxCountForCourse} value={count} onChange={(event) => setLecturerCourseCount(course.code, event.target.value, selectedLecturer.id)} className="w-full rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8] disabled:opacity-50" title={maxCountForCourse === 0 ? `This lecturer already has ${lecturerLimit} assigned ${lecturerLimit === 1 ? "class" : "classes"} for their rating.` : undefined} disabled={maxCountForCourse === 0} />
                       </label>
                     );
                   })}
