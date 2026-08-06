@@ -229,7 +229,7 @@ const plottedCourseTitles = (lecturer, courses) =>
 const plottedCourseCountLabel = (count) =>
   `${count} plotted ${count === 1 ? "course" : "courses"}`;
 const termPlottingId = (termCode, lecturerId) => `${termCode}::${lecturerId}`;
-const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 99;
+const MAX_CLASS_ASSIGNMENTS_PER_COURSE = 999;
 const COURSE_CLASS_PLANS_STORAGE_KEY = "ut_course_class_plans";
 const SYNC_RETRY_INITIAL_DELAY = 2_000;
 const SYNC_RETRY_MAX_DELAY = 60_000;
