@@ -568,7 +568,8 @@ export function createDirectoryFeatures(deps) {
     courses,
     selectedTermCode,
     canSyncData = true,
-    canSyncLecturerLabels = false,
+    onLecturerLabelChange,
+    onDiscardLecturerLabelChange,
   }) {
     const importInputRef = useRef(null);
     const [query, setQuery] = useState("");
@@ -711,15 +712,22 @@ export function createDirectoryFeatures(deps) {
             )
           : [{ ...item, available: availableSlots, plotted: [] }, ...prev],
       );
+      onLecturerLabelChange?.(item.id, {
+        rating: clampRating(item.rating),
+        warning_note: String(item.warning_note || "").trim(),
+      });
       setModal(null);
     };
     const rateLecturer = (id, rating) => {
       const nextRating = clampRating(rating);
-      setLecturers((prev) =>
-        prev.map((lecturer) =>
-          lecturer.id === id ? { ...lecturer, rating: nextRating } : lecturer,
-        ),
-      );
+      if (onLecturerLabelChange)
+        onLecturerLabelChange(id, { rating: nextRating });
+      else
+        setLecturers((prev) =>
+          prev.map((lecturer) =>
+            lecturer.id === id ? { ...lecturer, rating: nextRating } : lecturer,
+          ),
+        );
       setViewing((prev) =>
         prev?.id === id ? { ...prev, rating: nextRating } : prev,
       );
@@ -752,7 +760,7 @@ export function createDirectoryFeatures(deps) {
       if (USE_SUPABASE && canSyncData) {
         await upsertRows(
           "lecturers",
-          serializeLecturersForDatabase(directoryRows, canSyncLecturerLabels),
+          serializeLecturersForDatabase(directoryRows, false),
           "id",
         );
         await upsertRows("term_plottings", plottingRows, "id");
@@ -768,6 +776,14 @@ export function createDirectoryFeatures(deps) {
           byId.set(item.id, mergeImportedLecturer(byId.get(item.id), item)),
         );
         return Array.from(byId.values());
+      });
+      uniqueItems.forEach((item) => {
+        const labels = {};
+        if (item._hasImportedRating) labels.rating = item.rating;
+        if (item._hasImportedWarningNote)
+          labels.warning_note = item.warning_note;
+        if (Object.keys(labels).length)
+          onLecturerLabelChange?.(item.id, labels);
       });
     };
     const handleImport = async (event) => {
@@ -946,6 +962,7 @@ export function createDirectoryFeatures(deps) {
       setMobileSearchOpen(true);
     };
     const remove = (id) => {
+      onDiscardLecturerLabelChange?.(id);
       setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
       setTermLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
       setDeleteTarget(null);

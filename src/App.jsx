@@ -13,15 +13,21 @@ import {
 } from "./lib/autoPilot.js";
 import {
   USE_SUPABASE,
+  PENDING_LECTURER_LABELS_STORAGE_KEY,
   clearPendingSync,
+  clearStoredLecturerLabelChanges,
   createDatabaseSnapshotTools,
+  discardStoredLecturerLabelChange,
   getAccessToken,
+  getStoredLecturerLabelChanges,
   getStoredPendingSync,
   getStoredUserEmail,
+  queueLecturerLabelChange,
   signIn,
   signOut,
   storePendingSync,
   syncTable,
+  updateLecturerLabels,
   upsertRows,
 } from "./lib/database.js";
 import { createImportExportTools } from "./lib/importExport.js";
@@ -957,6 +963,38 @@ function serializeLecturersForDatabase(lecturers, includeLabels = false) {
   });
 }
 
+function applyLecturerLabelChanges(lecturers = [], changes = {}) {
+  return lecturers.map((lecturer) => {
+    const pending = changes[lecturer.id];
+    if (!pending) return lecturer;
+    return {
+      ...lecturer,
+      ...(Object.hasOwn(pending, "rating")
+        ? { rating: clampRating(pending.rating) }
+        : {}),
+      ...(Object.hasOwn(pending, "warning_note")
+        ? { warning_note: String(pending.warning_note || "").trim() }
+        : {}),
+    };
+  });
+}
+
+function mergeServerLecturerLabels(lecturers = [], serverLecturers = []) {
+  const serverById = new Map(
+    serverLecturers.map((lecturer) => [lecturer.id, lecturer]),
+  );
+  return lecturers.map((lecturer) => {
+    const server = serverById.get(lecturer.id);
+    return server
+      ? {
+          ...lecturer,
+          rating: server.rating,
+          warning_note: server.warning_note,
+        }
+      : lecturer;
+  });
+}
+
 function buildLecturerExportRows(lecturers, courses) {
   return lecturers.map((lecturer) => ({
     Lecturer_ID: lecturer.id,
@@ -1025,6 +1063,7 @@ runSelfTests({
   LECTURER_CLASS_LIMIT,
   LECTURER_EXPORT_COLUMNS,
   USE_SUPABASE,
+  applyLecturerLabelChanges,
   availabilityTone,
   buildAutoPilotPlotting,
   buildLecturerExportRows,
@@ -1044,6 +1083,7 @@ runSelfTests({
   limitAssignmentMapByLecturer,
   mapImportedPlottingRows,
   mergeImportedLecturer,
+  mergeServerLecturerLabels,
   normalizeCourseClassPlans,
   plottedCourseCountLabel,
   plottedCourseTitles,
@@ -1825,7 +1865,10 @@ export default function App() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [canSyncLecturerLabels, setCanSyncLecturerLabels] = useState(false);
   const [canSyncCourseClassPlans, setCanSyncCourseClassPlans] = useState(false);
+  const [pendingLecturerLabelChanges, setPendingLecturerLabelChanges] =
+    useState({});
   const [syncWakeSignal, setSyncWakeSignal] = useState(0);
+  const [saveNowSignal, setSaveNowSignal] = useState(0);
   const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
   const syncPayloadRef = useRef(null);
@@ -1833,6 +1876,7 @@ export default function App() {
   const syncedRevisionRef = useRef(0);
   const syncTimerRef = useRef(null);
   const syncRetryDelayRef = useRef(SYNC_RETRY_INITIAL_DELAY);
+  const handledSaveNowSignalRef = useRef(0);
   const setHydrated = useCallback((value) => {
     hydratedRef.current = value;
     setIsHydrated(value);
@@ -1846,8 +1890,10 @@ export default function App() {
   const setEntryMode = useCallback((entryMode) => {
     setSession((prev) => ({ ...prev, entryMode }));
   }, []);
-  const applyDatabaseSnapshot = useCallback((snapshot) => {
-    setLecturers(snapshot.lecturers);
+  const applyDatabaseSnapshot = useCallback((snapshot, labelChanges = {}) => {
+    setLecturers(
+      applyLecturerLabelChanges(snapshot.lecturers, labelChanges),
+    );
     setCourses(snapshot.courses);
     setTerms(snapshot.terms);
     setTermPlottings(snapshot.termPlottings);
@@ -1859,6 +1905,7 @@ export default function App() {
       if (isDemoSession) {
         applyDatabaseSnapshot(cloneDemoSnapshot());
         setCourseClassPlans(cloneDemoCourseClassPlans());
+        setPendingLecturerLabelChanges({});
         setSelectedTermCode("DEMO-2026-1");
         setCanSyncLecturerLabels(true);
         setCanSyncCourseClassPlans(true);
@@ -1887,20 +1934,32 @@ export default function App() {
         setCanSyncLecturerLabels(lecturerLabelsSupported);
         setCanSyncCourseClassPlans(snapshot.courseClassPlansSupported);
         const pendingSync = getStoredPendingSync(userEmail);
+        const lecturerLabelChanges = getStoredLecturerLabelChanges(userEmail);
+        setPendingLecturerLabelChanges(lecturerLabelChanges);
         if (pendingSync?.payload) {
-          applyDatabaseSnapshot(pendingSync.payload);
+          applyDatabaseSnapshot(
+            {
+              ...pendingSync.payload,
+              lecturers: mergeServerLecturerLabels(
+                pendingSync.payload.lecturers,
+                snapshot.lecturers,
+              ),
+            },
+            lecturerLabelChanges,
+          );
           setCourseClassPlans(
             pendingSync.payload.courseClassPlans || getStoredCourseClassPlans(),
           );
         } else {
-          applyDatabaseSnapshot(snapshot);
+          applyDatabaseSnapshot(snapshot, lecturerLabelChanges);
           setCourseClassPlans({
             ...getStoredCourseClassPlans(),
             ...snapshot.courseClassPlans,
           });
         }
         setHydrated(true);
-        setSyncState(pendingSync ? "pending" : "saved");
+        const hasPendingLabels = Object.keys(lecturerLabelChanges).length > 0;
+        setSyncState(pendingSync || hasPendingLabels ? "pending" : "saved");
         const setupNotes = [
           !lecturerLabelsSupported
             ? "Run lecturer labels SQL to save ratings and warning notes."
@@ -1910,7 +1969,7 @@ export default function App() {
             : "",
         ].filter(Boolean);
         setDbStatus(
-          pendingSync
+          pendingSync || hasPendingLabels
             ? "Unsaved changes restored. Saving..."
             : setupNotes.length
               ? `Supabase connected. ${setupNotes.join(" ")}`
@@ -1994,6 +2053,54 @@ export default function App() {
     );
   }, [courseClassPlans, isDemoSession]);
 
+  const queueLecturerLabels = useCallback(
+    (lecturerId, patch) => {
+      setLecturers((prev) =>
+        prev.map((lecturer) =>
+          lecturer.id === lecturerId ? { ...lecturer, ...patch } : lecturer,
+        ),
+      );
+      if (isDemoSession || !userEmail) return;
+      setPendingLecturerLabelChanges(
+        queueLecturerLabelChange(userEmail, lecturerId, patch),
+      );
+    },
+    [isDemoSession, userEmail],
+  );
+
+  const discardLecturerLabels = useCallback(
+    (lecturerId) => {
+      if (isDemoSession || !userEmail) return;
+      setPendingLecturerLabelChanges(
+        discardStoredLecturerLabelChange(userEmail, lecturerId),
+      );
+    },
+    [isDemoSession, userEmail],
+  );
+
+  useEffect(() => {
+    if (isDemoSession || !userEmail) return undefined;
+    const handleStorage = (event) => {
+      if (!event.key?.startsWith(`${PENDING_LECTURER_LABELS_STORAGE_KEY}:`))
+        return;
+      const changes = getStoredLecturerLabelChanges(userEmail);
+      setPendingLecturerLabelChanges(changes);
+      setLecturers((prev) => applyLecturerLabelChanges(prev, changes));
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [isDemoSession, userEmail]);
+
+  useEffect(() => {
+    if (!Object.keys(pendingLecturerLabelChanges).length) return undefined;
+    const warnAboutPendingChanges = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnAboutPendingChanges);
+    return () => window.removeEventListener("beforeunload", warnAboutPendingChanges);
+  }, [pendingLecturerLabelChanges]);
+
   useEffect(() => {
     const wakeSync = () => {
       syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
@@ -2028,7 +2135,10 @@ export default function App() {
       canSyncLecturerLabels,
       canSyncCourseClassPlans,
     };
-    storePendingSync(userEmail, syncPayloadRef.current);
+    storePendingSync(userEmail, {
+      ...syncPayloadRef.current,
+      lecturers: serializeLecturersForDatabase(lecturers, false),
+    });
     setSyncState(navigator.onLine ? "pending" : "offline");
     setDbStatus(
       navigator.onLine
@@ -2065,10 +2175,7 @@ export default function App() {
         await Promise.all([
           syncTable(
             "lecturers",
-            serializeLecturersForDatabase(
-              payload.lecturers,
-              payload.canSyncLecturerLabels,
-            ),
+            serializeLecturersForDatabase(payload.lecturers, false),
             "id",
           ),
           syncTable("courses", payload.courses, "code"),
@@ -2090,11 +2197,30 @@ export default function App() {
           );
         }
         await Promise.all(dependentSyncOperations);
+        const currentLabelChanges = getStoredLecturerLabelChanges(userEmail);
+        let remainingLabelChanges = currentLabelChanges;
+        if (
+          payload.canSyncLecturerLabels &&
+          Object.keys(currentLabelChanges).length
+        ) {
+          await Promise.all(
+            Object.entries(currentLabelChanges).map(([lecturerId, change]) =>
+              updateLecturerLabels(lecturerId, change),
+            ),
+          );
+          remainingLabelChanges = clearStoredLecturerLabelChanges(
+            userEmail,
+            currentLabelChanges,
+          );
+          setPendingLecturerLabelChanges(remainingLabelChanges);
+        }
         syncedRevisionRef.current = startedRevision;
         syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
         if (syncRevisionRef.current === startedRevision) {
           const allDataTypesSupported =
-            payload.canSyncLecturerLabels && payload.canSyncCourseClassPlans;
+            payload.canSyncLecturerLabels &&
+            payload.canSyncCourseClassPlans &&
+            Object.keys(remainingLabelChanges).length === 0;
           if (allDataTypesSupported) clearPendingSync(userEmail);
           setSyncState(allDataTypesSupported ? "saved" : "pending");
           setDbStatus(
@@ -2130,8 +2256,14 @@ export default function App() {
       }
     };
 
+    const saveImmediately =
+      saveNowSignal > handledSaveNowSignalRef.current;
+    if (saveImmediately) handledSaveNowSignalRef.current = saveNowSignal;
     window.clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = window.setTimeout(runSync, 500);
+    syncTimerRef.current = window.setTimeout(
+      runSync,
+      saveImmediately ? 0 : 500,
+    );
     return () => {
       if (syncRevisionRef.current === scheduledRevision)
         window.clearTimeout(syncTimerRef.current);
@@ -2146,6 +2278,8 @@ export default function App() {
     isDemoSession,
     canSyncLecturerLabels,
     canSyncCourseClassPlans,
+    pendingLecturerLabelChanges,
+    saveNowSignal,
     syncWakeSignal,
   ]);
 
@@ -2176,9 +2310,15 @@ export default function App() {
     setCourseClassPlans(getStoredCourseClassPlans());
     setCanSyncLecturerLabels(false);
     setCanSyncCourseClassPlans(false);
+    setPendingLecturerLabelChanges({});
     setSelectedTermCode("");
     setSyncState("idle");
     setDbStatus(USE_SUPABASE ? "Signed out" : "Supabase not configured");
+  };
+
+  const handleSaveNow = () => {
+    syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
+    setSaveNowSignal((value) => value + 1);
   };
 
   const Page = {
@@ -2240,7 +2380,16 @@ export default function App() {
     onActiveTermChange: setSelectedTermCode,
     canSyncData: !isDemoSession,
     canSyncLecturerLabels,
+    onLecturerLabelChange: queueLecturerLabels,
+    onDiscardLecturerLabelChange: discardLecturerLabels,
   };
+  const pendingLecturerLabelCount = Object.keys(
+    pendingLecturerLabelChanges,
+  ).length;
+  const saveNowDisabled =
+    syncState === "loading" ||
+    syncState === "saving" ||
+    (syncState === "saved" && pendingLecturerLabelCount === 0);
 
   if (entryMode === "landing")
     return (
@@ -2286,6 +2435,19 @@ export default function App() {
             >
               {dbStatus}
             </span>
+            {!isDemoSession && (
+              <Button
+                variant="secondary"
+                onClick={handleSaveNow}
+                disabled={saveNowDisabled}
+                title="Upload pending changes now"
+              >
+                <Icons.check className="h-4 w-4" />
+                {pendingLecturerLabelCount
+                  ? `Save now (${pendingLecturerLabelCount})`
+                  : "Save now"}
+              </Button>
+            )}
             <Badge tone="slate">{userEmail}</Badge>
           </div>
           <Header

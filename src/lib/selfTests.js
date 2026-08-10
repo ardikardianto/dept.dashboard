@@ -3,6 +3,7 @@ export function runSelfTests(deps) {
     LECTURER_CLASS_LIMIT,
     LECTURER_EXPORT_COLUMNS,
     USE_SUPABASE,
+    applyLecturerLabelChanges,
     availabilityTone,
     buildAutoPilotPlotting,
     buildLecturerExportRows,
@@ -21,6 +22,7 @@ export function runSelfTests(deps) {
     getTermScopedLecturers,
     limitAssignmentMapByLecturer,
     mapImportedPlottingRows,
+    mergeServerLecturerLabels,
     mergeImportedLecturer,
     normalizeCourseClassPlans,
     plottedCourseCountLabel,
@@ -546,8 +548,25 @@ export function runSelfTests(deps) {
     );
     console.assert(
       !("rating" in serializeLecturersForDatabase(testLecturers, false)[0]) &&
+        !("warning_note" in
+          serializeLecturersForDatabase(testLecturers, false)[0]) &&
         serializeLecturersForDatabase(testLecturers, true)[0].rating === 4,
-      "Lecturer label sync should be database-compatible",
+      "Core lecturer sync should not include labels",
+    );
+    const queuedLabelRows = applyLecturerLabelChanges(testLecturers, {
+      LECT001: { rating: 5, changeId: "test-change" },
+    });
+    console.assert(
+      queuedLabelRows[0].rating === 5 && queuedLabelRows[1].rating === 3,
+      "Pending labels should apply only to the selected lecturer",
+    );
+    const serverLabelRows = mergeServerLecturerLabels(
+      [{ ...testLecturers[0], rating: 1 }],
+      [{ ...testLecturers[0], rating: 5 }],
+    );
+    console.assert(
+      serverLabelRows[0].rating === 5,
+      "Server labels should replace stale labels in restored core snapshots",
     );
     const dedupedImport = dedupeImportedLecturers([
       { id: "LECT001", email: "a@example.com", expertise: ["Reading"] },

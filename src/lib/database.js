@@ -3,6 +3,8 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 export const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 export const PENDING_SYNC_STORAGE_KEY = "ut_pending_sync_v1";
+export const PENDING_LECTURER_LABELS_STORAGE_KEY =
+  "ut_pending_lecturer_labels_v1";
 
 const ACCESS_TOKEN_STORAGE_KEY = "ut_supabase_access_token";
 const REFRESH_TOKEN_STORAGE_KEY = "ut_supabase_refresh_token";
@@ -141,6 +143,47 @@ export async function upsertRows(table, rows, conflictKey) {
   });
 }
 
+function normalizeLecturerLabelPatch(patch = {}) {
+  const labels = {};
+  if (Object.hasOwn(patch, "rating")) {
+    const rating = Number(patch.rating);
+    labels.rating = Number.isFinite(rating)
+      ? Math.min(5, Math.max(0, Math.round(rating)))
+      : 0;
+  }
+  if (Object.hasOwn(patch, "warning_note"))
+    labels.warning_note = String(patch.warning_note || "").trim();
+  return labels;
+}
+
+export async function updateLecturerLabels(lecturerId, patch) {
+  const id = String(lecturerId || "").trim();
+  const labels = normalizeLecturerLabelPatch(patch);
+  if (!id || !Object.keys(labels).length)
+    throw new Error("A lecturer and label change are required.");
+
+  const rows = await supabaseRequest(
+    `/rest/v1/lecturers?id=eq.${encodeURIComponent(id)}&select=id,rating,warning_note`,
+    {
+      method: "PATCH",
+      headers: {
+        ...supabaseHeaders({ preferReturn: true }),
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(labels),
+    },
+  );
+  const saved = Array.isArray(rows) ? rows[0] : null;
+  if (!saved)
+    throw new Error(`Supabase did not confirm the label update for ${id}.`);
+  const verified = Object.entries(labels).every(
+    ([key, value]) => saved[key] === value,
+  );
+  if (!verified)
+    throw new Error(`Supabase returned different label values for ${id}.`);
+  return saved;
+}
+
 async function deleteMissingRows(table, key, currentKeys) {
   const existing = await supabaseRequest(`/rest/v1/${table}?select=${key}`, {
     method: "GET",
@@ -235,6 +278,64 @@ export function clearPendingSync(userEmail) {
   if (typeof localStorage === "undefined") return;
   if (getStoredPendingSync(userEmail))
     localStorage.removeItem(PENDING_SYNC_STORAGE_KEY);
+}
+
+function lecturerLabelStorageKey(userEmail) {
+  return `${PENDING_LECTURER_LABELS_STORAGE_KEY}:${encodeURIComponent(
+    String(userEmail || "").toLowerCase(),
+  )}`;
+}
+
+export function getStoredLecturerLabelChanges(userEmail) {
+  if (typeof localStorage === "undefined" || !userEmail) return {};
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(lecturerLabelStorageKey(userEmail)) || "{}",
+    );
+    return stored && typeof stored === "object" ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+export function queueLecturerLabelChange(userEmail, lecturerId, patch) {
+  if (typeof localStorage === "undefined" || !userEmail) return {};
+  const id = String(lecturerId || "").trim();
+  const labels = normalizeLecturerLabelPatch(patch);
+  if (!id || !Object.keys(labels).length)
+    return getStoredLecturerLabelChanges(userEmail);
+  const changes = getStoredLecturerLabelChanges(userEmail);
+  changes[id] = {
+    ...(changes[id] || {}),
+    ...labels,
+    changeId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    updatedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(lecturerLabelStorageKey(userEmail), JSON.stringify(changes));
+  return changes;
+}
+
+export function clearStoredLecturerLabelChanges(userEmail, savedChanges = {}) {
+  if (typeof localStorage === "undefined" || !userEmail) return {};
+  const changes = getStoredLecturerLabelChanges(userEmail);
+  Object.entries(savedChanges).forEach(([id, saved]) => {
+    if (changes[id]?.changeId === saved?.changeId) delete changes[id];
+  });
+  const key = lecturerLabelStorageKey(userEmail);
+  if (Object.keys(changes).length)
+    localStorage.setItem(key, JSON.stringify(changes));
+  else localStorage.removeItem(key);
+  return changes;
+}
+
+export function discardStoredLecturerLabelChange(userEmail, lecturerId) {
+  const changes = getStoredLecturerLabelChanges(userEmail);
+  delete changes[String(lecturerId || "").trim()];
+  const key = lecturerLabelStorageKey(userEmail);
+  if (Object.keys(changes).length)
+    localStorage.setItem(key, JSON.stringify(changes));
+  else localStorage.removeItem(key);
+  return changes;
 }
 
 export function createDatabaseSnapshotTools(deps) {
