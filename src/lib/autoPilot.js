@@ -9,6 +9,13 @@ const FIVE_STAR_TARGET = LECTURER_CLASS_LIMIT;
 const COURSE_EXPERTISE_RULES = [
   {
     expertise: "English Language Teaching",
+    aliases: [
+      "language teaching",
+      "elt",
+      "tesol",
+      "teaching english",
+      "english teaching",
+    ],
     keywords: [
       "reading",
       "writing",
@@ -25,6 +32,7 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "English Linguistics",
+    aliases: ["english language linguistics"],
     keywords: [
       "english linguistics",
       "linguistics",
@@ -43,6 +51,7 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "Translation Studies",
+    aliases: ["translation", "translation study", "penerjemahan"],
     keywords: [
       "translation",
       "translating",
@@ -60,6 +69,7 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "Indonesian Linguistics",
+    aliases: ["indonesian language", "linguistik indonesia"],
     keywords: [
       "indonesian",
       "bahasa indonesia",
@@ -73,6 +83,7 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "Literary Studies",
+    aliases: ["literature", "english literature", "literary", "sastra"],
     keywords: [
       "literary",
       "literature",
@@ -85,10 +96,12 @@ const COURSE_EXPERTISE_RULES = [
   },
   {
     expertise: "Philosophy",
+    aliases: [],
     keywords: ["sejarah pemikiran modern"],
   },
   {
     expertise: "English for Specific Purposes",
+    aliases: ["esp"],
     keywords: [
       "specific purposes",
       "esp",
@@ -130,6 +143,16 @@ function getLecturerExpertiseKeys(lecturer) {
     .filter(Boolean);
 }
 
+function canonicalizeExpertise(value) {
+  const normalized = normalizeText(value);
+  const matchingRule = COURSE_EXPERTISE_RULES.find(
+    (rule) =>
+      normalizeText(rule.expertise) === normalized ||
+      (rule.aliases || []).some((alias) => normalizeText(alias) === normalized),
+  );
+  return matchingRule ? normalizeText(matchingRule.expertise) : normalized;
+}
+
 export function getCourseExpertiseMatches(course) {
   const courseText = getCourseText(course);
   if (!courseText) return [];
@@ -143,12 +166,17 @@ export function getCourseExpertiseMatches(course) {
 export function expertiseMatchesCourse(lecturer, course) {
   const expertiseKeys = getLecturerExpertiseKeys(lecturer);
   if (!expertiseKeys.length) return false;
+  const canonicalExpertiseKeys = expertiseKeys.map(canonicalizeExpertise);
 
   const courseText = getCourseText(course);
   const mappedExpertise = getCourseExpertiseMatches(course).map((item) =>
     normalizeText(item),
   );
-  if (expertiseKeys.some((expertise) => mappedExpertise.includes(expertise)))
+  if (
+    canonicalExpertiseKeys.some((expertise) =>
+      mappedExpertise.includes(expertise),
+    )
+  )
     return true;
 
   const titleText = normalizeText(course?.title || "");
@@ -461,13 +489,53 @@ function calculateAutoPilotMetrics(
       sum + (preservedAssignmentMap[course.code] || []).filter(Boolean).length,
     0,
   );
+  const preservedExpertiseMismatches = courses.flatMap((course) =>
+    (preservedAssignmentMap[course.code] || []).flatMap(
+      (lecturerId, index) => {
+        if (!lecturerId) return [];
+        const lecturer = lecturerById.get(lecturerId);
+        if (lecturer && expertiseMatchesCourse(lecturer, course)) return [];
+        return [
+          {
+            className: `${course.code}.${index + 1}`,
+            courseCode: course.code,
+            courseTitle: course.title,
+            lecturerId,
+            lecturerName: lecturer?.name || lecturerId,
+          },
+        ];
+      },
+    ),
+  );
+  const preservedExpertiseMatchCount = Math.max(
+    0,
+    preservedCount - preservedExpertiseMismatches.length,
+  );
+  const newlyAssignedCount = assignmentExplanations.length;
+  const newExpertiseMatchCount = assignmentExplanations.filter(
+    (item) => item.expertiseMatched,
+  ).length;
 
   return {
     assignedCount,
     plannedCount,
     unassignedCount: Math.max(0, plannedCount - assignedCount),
-    newlyAssignedCount: assignmentExplanations.length,
+    newlyAssignedCount,
     preservedCount,
+    newExpertiseMatchCount,
+    newExpertiseMismatchCount: Math.max(
+      0,
+      newlyAssignedCount - newExpertiseMatchCount,
+    ),
+    newExpertiseMatchRate: newlyAssignedCount
+      ? Math.round((newExpertiseMatchCount / newlyAssignedCount) * 100)
+      : 0,
+    preservedExpertiseMatchCount,
+    preservedExpertiseMismatchCount: preservedExpertiseMismatches.length,
+    preservedExpertiseMatchRate: preservedCount
+      ? Math.round((preservedExpertiseMatchCount / preservedCount) * 100)
+      : 0,
+    preservedExpertiseMismatches,
     expertiseMatchCount,
     expertiseMatchRate: assignedCount
       ? Math.round((expertiseMatchCount / assignedCount) * 100)
@@ -567,22 +635,33 @@ export function buildAutoPilotPlotting(
     includeRestricted,
     predicate = () => true,
   ) => {
-    return (
-      states
-        .filter(
-          (state) =>
-            predicate(state) &&
-            state.capacity > 0 &&
-            state.assigned < state.capacity &&
-            state.assigned < targetLimit &&
-            (includeRestricted || !state.restricted),
+    const expertiseMatchHasCapacity = states.some(
+      (state) =>
+        state.capacity > 0 &&
+        state.assigned < state.capacity &&
+        expertiseMatchesCourse(state.lecturer, course),
+    );
+    const eligibleCandidates = states.filter(
+      (state) =>
+        predicate(state) &&
+        state.capacity > 0 &&
+        state.assigned < state.capacity &&
+        state.assigned < targetLimit &&
+        (includeRestricted || !state.restricted),
+    );
+    const candidates = expertiseMatchHasCapacity
+      ? eligibleCandidates.filter((state) =>
+          expertiseMatchesCourse(state.lecturer, course),
         )
+      : eligibleCandidates;
+    return (
+      candidates
         .map((state) => ({ state, score: scoreCandidate(state, course) }))
         .sort(
           (a, b) =>
+            b.state.rating - a.state.rating ||
             b.score - a.score ||
             a.state.assigned - b.state.assigned ||
-            b.state.rating - a.state.rating ||
             a.state.lecturer.name.localeCompare(b.state.lecturer.name),
         )[0]?.state || null
     );
@@ -603,7 +682,7 @@ export function buildAutoPilotPlotting(
     if (!expertiseMatched) {
       warnings.push("No listed expertise match");
       conflictWarningSet.add(
-        `${slot.course.code}.${slot.index + 1} was assigned outside listed expertise to ${state.lecturer.name}.`,
+        `${slot.course.code}.${slot.index + 1} used ${state.lecturer.name} as an expertise fallback because no matching lecturer had remaining capacity.`,
       );
     }
     if (!state.rating) {
@@ -628,10 +707,11 @@ export function buildAutoPilotPlotting(
       className: `${slot.course.code}.${slot.index + 1}`,
       lecturerId: state.lecturer.id,
       lecturerName: state.lecturer.name,
+      expertiseMatched,
       reasons: [
         expertiseMatched
           ? "Expertise matches the course."
-          : "Selected by rating, availability, and workload because no expertise match was available.",
+          : "No lecturer with matching expertise had remaining capacity; selected by rating, availability, and workload as a fallback.",
         state.rating
           ? `${state.rating}-star performance rating.`
           : "No performance rating recorded.",
@@ -723,7 +803,12 @@ export function buildAutoPilotPlotting(
       ? `Five-star lecturers were prioritized toward ${FIVE_STAR_TARGET} classes each before the general distribution passes.`
       : "",
     `First pass prioritized ${eligibleFirstPass} lecturers for up to ${EQUAL_DISTRIBUTION_TARGET} classes each; only lecturers with at least 3 stars can receive 2 or more classes.`,
-    `Expertise matched ${metrics.expertiseMatchCount} assigned ${metrics.expertiseMatchCount === 1 ? "class" : "classes"} (${metrics.expertiseMatchRate}%); remaining choices used rating, available capacity, and current plotted load.`,
+    metrics.newlyAssignedCount
+      ? `Generated assignments matched expertise for ${metrics.newExpertiseMatchCount} of ${metrics.newlyAssignedCount} classes (${metrics.newExpertiseMatchRate}%).`
+      : "No open class slots required a new auto-pilot assignment.",
+    metrics.preservedCount
+      ? `Preserved assignments matched expertise for ${metrics.preservedExpertiseMatchCount} of ${metrics.preservedCount} classes (${metrics.preservedExpertiseMatchRate}%); ${metrics.preservedExpertiseMismatchCount} existing mismatch(es) were kept for administrator review.`
+      : "No existing assignments were preserved in this run.",
   ].filter(Boolean);
   if (underTargetFiveStarLecturers.length)
     reviewNotes.push(
@@ -749,6 +834,11 @@ export function buildAutoPilotPlotting(
     reviewNotes.push(
       "No planned classes were found. Set planned class counts before running auto-pilot.",
     );
+  metrics.preservedExpertiseMismatches.forEach((item) =>
+    conflictWarningSet.add(
+      `${item.className} preserved existing assignment to ${item.lecturerName} without a listed expertise match.`,
+    ),
+  );
   unassignedByCourse.forEach(({ course, count }) =>
     conflictWarningSet.add(
       `${course.code} ${course.title} still has ${count} unassigned planned class(es).`,

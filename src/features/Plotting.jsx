@@ -763,13 +763,23 @@ export function createPlottingComponent(deps) {
                   </div>
                   <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">
                     <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
-                      Expertise match
+                      Generated expertise match
                     </p>
                     <p className="mt-2 text-2xl font-medium text-[#102f52]">
-                      {autoPilotMetrics.expertiseMatchRate}%
+                      {autoPilotMetrics.newlyAssignedCount
+                        ? `${autoPilotMetrics.newExpertiseMatchRate}%`
+                        : "N/A"}
                     </p>
                     <p className="mt-1 text-xs text-[#61717b]">
-                      {autoPilotMetrics.expertiseMatchCount} matched assignments
+                      {autoPilotMetrics.newExpertiseMatchCount}/
+                      {autoPilotMetrics.newlyAssignedCount} generated
+                    </p>
+                    <p className="mt-1 text-xs text-[#61717b]">
+                      Preserved: {autoPilotMetrics.preservedCount
+                        ? `${autoPilotMetrics.preservedExpertiseMatchRate}%`
+                        : "N/A"}{" ("}
+                      {autoPilotMetrics.preservedExpertiseMatchCount}/
+                      {autoPilotMetrics.preservedCount})
                     </p>
                   </div>
                   <div className="rounded-xl border border-[#dce9e6] bg-[#fffffb] p-4">

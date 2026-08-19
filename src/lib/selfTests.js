@@ -157,6 +157,17 @@ export function runSelfTests(deps) {
     );
     console.assert(
       expertiseMatchesCourse(
+        { ...testLecturers[0], expertise: ["ELT"] },
+        testCourses[0],
+      ) &&
+        expertiseMatchesCourse(
+          { ...testLecturers[0], expertise: ["Language Teaching"] },
+          testCourses[0],
+        ),
+      "Common expertise aliases should resolve to their canonical category",
+    );
+    console.assert(
+      expertiseMatchesCourse(
         { ...testLecturers[0], expertise: ["Indonesian Linguistics"] },
         { code: "COURSE103", title: "Tata Bahasa Indonesia", credits: 3 },
       ),
@@ -318,12 +329,12 @@ export function runSelfTests(deps) {
       "Auto-pilot should explain each assigned class",
     );
     console.assert(
-      autoPilotResult.conflictWarnings.length > 0,
-      "Auto-pilot should surface low-rating conflicts",
+      autoPilotResult.metrics.newExpertiseMismatchCount === 0,
+      "Auto-pilot should avoid expertise fallbacks while matching capacity exists",
     );
     console.assert(
-      autoPilotResult.metrics.expertiseMatchRate >= 50,
-      "Auto-pilot should report an expertise match rate",
+      autoPilotResult.metrics.newExpertiseMatchRate === 100,
+      "Auto-pilot should report generated expertise matches separately",
     );
     console.assert(
       autoPilotResult.metrics.loadDistribution.reduce(
@@ -361,6 +372,101 @@ export function runSelfTests(deps) {
     console.assert(
       ratingPriorityAutoPilot.assignmentMap.COURSE101[0] === "RATE004",
       "Auto-pilot should prioritize 4-star lecturers over 3-star lecturers",
+    );
+    const matchFirstAutoPilot = buildAutoPilotPlotting(
+      [
+        {
+          ...testLecturers[0],
+          id: "MATCH005",
+          name: "Non-matching Five Star",
+          expertise: ["Translation Studies"],
+          plotted: [],
+          available: 4,
+          rating: 5,
+        },
+        {
+          ...testLecturers[1],
+          id: "MATCH003",
+          name: "Matching Three Star",
+          expertise: ["Reading"],
+          plotted: [],
+          available: 4,
+          rating: 3,
+        },
+      ],
+      [testCourses[0]],
+      { COURSE101: 4 },
+    );
+    console.assert(
+      matchFirstAutoPilot.assignmentMap.COURSE101.every(
+        (id) => id === "MATCH003",
+      ) && matchFirstAutoPilot.metrics.newExpertiseMatchRate === 100,
+      "Matching expertise should outrank a higher rating for every available class",
+    );
+    const expertiseFallbackAutoPilot = buildAutoPilotPlotting(
+      [
+        {
+          ...testLecturers[0],
+          id: "FALLBACK005",
+          name: "Fallback Five Star",
+          expertise: ["Translation Studies"],
+          plotted: [],
+          available: 4,
+          rating: 5,
+        },
+        {
+          ...testLecturers[1],
+          id: "FALLBACK003",
+          name: "Limited Reading Expert",
+          expertise: ["Reading"],
+          plotted: [],
+          available: 2,
+          rating: 3,
+        },
+      ],
+      [testCourses[0]],
+      { COURSE101: 3 },
+    );
+    console.assert(
+      expertiseFallbackAutoPilot.assignmentMap.COURSE101.filter(
+        (id) => id === "FALLBACK003",
+      ).length === 2 &&
+        expertiseFallbackAutoPilot.metrics.newExpertiseMismatchCount === 1,
+      "Non-matching fallback should begin only after matching capacity is exhausted",
+    );
+    const preservedMismatchAutoPilot = buildAutoPilotPlotting(
+      [
+        {
+          ...testLecturers[0],
+          id: "PRESERVE_MATCH",
+          name: "Preserved Match Expert",
+          expertise: ["Reading"],
+          plotted: [],
+          available: 4,
+          rating: 4,
+        },
+        {
+          ...testLecturers[1],
+          id: "PRESERVE_OTHER",
+          name: "Preserved Other Expert",
+          expertise: ["Translation Studies"],
+          plotted: [],
+          available: 4,
+          rating: 4,
+        },
+      ],
+      [testCourses[0]],
+      { COURSE101: 5 },
+      {
+        COURSE101: ["PRESERVE_OTHER", "PRESERVE_OTHER", "", "", ""],
+      },
+    );
+    console.assert(
+      preservedMismatchAutoPilot.metrics.newExpertiseMatchRate === 100 &&
+        preservedMismatchAutoPilot.metrics.preservedExpertiseMatchRate === 0 &&
+        preservedMismatchAutoPilot.metrics.preservedExpertiseMismatchCount ===
+          2,
+      "Generated and preserved expertise results should be reported separately",
     );
     const plottingHealth = calculatePlottingHealth(
       [
