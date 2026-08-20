@@ -27,6 +27,7 @@ export function runSelfTests(deps) {
     normalizeCourseClassPlans,
     plottedCourseCountLabel,
     plottedCourseTitles,
+    resizeCourseAssignments,
     serializeCourseClassPlans,
     serializeLecturersForDatabase,
   } = deps;
@@ -143,6 +144,19 @@ export function runSelfTests(deps) {
     console.assert(
       getCourseAssignmentMap(testLecturers, testCourses).COURSE101.length === 2,
       "Course assignment map should include each assigned class",
+    );
+    const largeAssignmentPlan = Array.from(
+      { length: 117 },
+      (_, index) => `LECT${index + 1}`,
+    );
+    const reducedAssignmentPlan = resizeCourseAssignments(
+      largeAssignmentPlan,
+      110,
+    );
+    console.assert(
+      reducedAssignmentPlan.length === 110 &&
+        reducedAssignmentPlan[109] === "LECT110",
+      "Reducing planned classes should remove surplus assignment slots",
     );
     console.assert(
       expertiseMatchesCourse(testLecturers[0], testCourses[0]),

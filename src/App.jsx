@@ -444,6 +444,11 @@ function toClassCount(value) {
   );
 }
 
+function resizeCourseAssignments(assignments = [], value = 0) {
+  const count = toClassCount(value);
+  return Array.from({ length: count }, (_, index) => assignments[index] || "");
+}
+
 function getPlottedCourseCounts(plotted = []) {
   return Object.entries(
     plotted.reduce((acc, code) => {
@@ -1087,6 +1092,7 @@ runSelfTests({
   normalizeCourseClassPlans,
   plottedCourseCountLabel,
   plottedCourseTitles,
+  resizeCourseAssignments,
   serializeCourseClassPlans,
   serializeLecturersForDatabase,
 });
@@ -1820,6 +1826,7 @@ const Plotting = createPlottingComponent({
   parseCSV,
   parseXLSX,
   plottedCourseTitles,
+  resizeCourseAssignments,
   rowsToObjects,
   toClassCount,
 });

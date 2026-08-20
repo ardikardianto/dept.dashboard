@@ -36,9 +36,38 @@ export function createPlottingComponent(deps) {
     parseCSV,
     parseXLSX,
     plottedCourseTitles,
+    resizeCourseAssignments,
     rowsToObjects,
     toClassCount,
   } = deps;
+
+  function PlannedClassCountInput({ planned, max, onCommit }) {
+    const [draft, setDraft] = useState(null);
+    const commit = () => {
+      if (draft === null) return;
+      const value = String(draft).trim();
+      setDraft(null);
+      if (value) onCommit(value);
+    };
+
+    return (
+      <input
+        type="number"
+        min="0"
+        max={max}
+        value={draft ?? planned}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        className="w-28 rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]"
+      />
+    );
+  }
 
   function Plotting({
     lecturers,
@@ -63,6 +92,7 @@ export function createPlottingComponent(deps) {
     const [autoPilotUndo, setAutoPilotUndo] = useState(null);
     const [selectedCourseCode, setSelectedCourseCode] = useState("");
     const [selectedLecturerId, setSelectedLecturerId] = useState("");
+    const [classCountReduction, setClassCountReduction] = useState(null);
     const plannedCounts = useMemo(
       () => getCourseClassPlan(courseClassPlans, selectedTermCode),
       [courseClassPlans, selectedTermCode],
@@ -172,8 +202,16 @@ export function createPlottingComponent(deps) {
         ),
       [selectedLecturer],
     );
-    const updateCoursePlan = (code, value) => {
+    const applyCoursePlanCount = (courseCode, value) => {
       const count = toClassCount(value);
+      const nextCourseAssignments = resizeCourseAssignments(
+        assignmentMap[courseCode],
+        count,
+      );
+      const nextAssignmentMap = {
+        ...assignmentMap,
+        [courseCode]: nextCourseAssignments,
+      };
       setAutoPilotReview(null);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(
@@ -183,14 +221,47 @@ export function createPlottingComponent(deps) {
         return {
           ...prev,
           [selectedTermCode]: {
-            counts: { ...counts, [code]: count },
+            counts: { ...counts, [courseCode]: count },
             assignments: {
               ...assignments,
-              [code]: assignments[code] || assignmentMap[code] || [],
+              [courseCode]: nextCourseAssignments,
             },
           },
         };
       });
+      setLecturers((prev) =>
+        applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap),
+      );
+    };
+    const commitCoursePlanCount = (course, value) => {
+      const count = toClassCount(value);
+      const currentCount = classCounts[course.code] || 0;
+      if (count === currentCount) return;
+      if (count < currentCount) {
+        const removedAssignments = (assignmentMap[course.code] || [])
+          .slice(count, currentCount)
+          .filter(Boolean).length;
+        setClassCountReduction({
+          courseCode: course.code,
+          courseTitle: course.title,
+          currentCount,
+          nextCount: count,
+          removedAssignments,
+        });
+        return;
+      }
+      applyCoursePlanCount(course.code, count);
+    };
+    const cancelClassCountReduction = () => {
+      setClassCountReduction(null);
+    };
+    const confirmClassCountReduction = () => {
+      if (!classCountReduction) return;
+      applyCoursePlanCount(
+        classCountReduction.courseCode,
+        classCountReduction.nextCount,
+      );
+      setClassCountReduction(null);
     };
     const assignLecturer = (courseCode, classIndex, lecturerId) => {
       const count = classCounts[courseCode] || 0;
@@ -998,18 +1069,12 @@ export function createPlottingComponent(deps) {
                                 <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
                                   Planned classes
                                 </span>
-                                <input
-                                  type="number"
-                                  min="0"
+                                <PlannedClassCountInput
+                                  planned={planned}
                                   max={MAX_CLASS_ASSIGNMENTS_PER_COURSE}
-                                  value={planned}
-                                  onChange={(event) =>
-                                    updateCoursePlan(
-                                      course.code,
-                                      event.target.value,
-                                    )
+                                  onCommit={(value) =>
+                                    commitCoursePlanCount(course, value)
                                   }
-                                  className="w-28 rounded-lg border border-[#dce9e6] bg-[#fffffb] px-2 py-2 text-sm font-normal text-[#26353f] outline-none focus:border-[#9bbfe8]"
                                 />
                               </label>
                               <Badge
@@ -1375,6 +1440,52 @@ export function createPlottingComponent(deps) {
             onApply={applyImportReview}
             onClose={() => setImportReview(null)}
           />
+        )}
+        {classCountReduction && (
+          <Modal
+            title="Reduce planned classes?"
+            onClose={cancelClassCountReduction}
+          >
+            <div className="space-y-5">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Icons.warning className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="font-medium text-amber-950">
+                      {classCountReduction.courseCode} -{" "}
+                      {classCountReduction.courseTitle}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-amber-800">
+                      Planned classes will change from{" "}
+                      {classCountReduction.currentCount} to{" "}
+                      {classCountReduction.nextCount}. This removes{" "}
+                      {classCountReduction.currentCount -
+                        classCountReduction.nextCount}{" "}
+                      class slots.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-sm leading-6 text-[#61717b]">
+                {classCountReduction.removedAssignments
+                  ? `${classCountReduction.removedAssignments} lecturer ${classCountReduction.removedAssignments === 1 ? "assignment" : "assignments"} in the removed class slots will be unassigned.`
+                  : "The removed class slots do not contain lecturer assignments."}
+                {" "}This change will be synchronized after you confirm it.
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={cancelClassCountReduction}
+                >
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={confirmClassCountReduction}>
+                  <Icons.check className="h-4 w-4" />
+                  Reduce to {classCountReduction.nextCount}
+                </Button>
+              </div>
+            </div>
+          </Modal>
         )}
         {autoPilotPreview && (
           <Modal
