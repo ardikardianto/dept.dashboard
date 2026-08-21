@@ -274,13 +274,30 @@ export function createPlottingComponent(deps) {
             : [],
         ),
       );
-    const swappableLecturers = lecturers
-      .filter(
-        (lecturer) =>
-          lecturer.id !== swapDraft?.sourceLecturerId &&
-          getLecturerAssignmentEntries(lecturer.id).length > 0,
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const getCourseSwapTargetEntries = (courseCode, sourceLecturerId) => {
+      const course = courses.find((item) => item.code === courseCode);
+      if (!course) return [];
+      return (assignmentMap[courseCode] || []).flatMap(
+        (lecturerId, classIndex) => {
+          const lecturer = lecturers.find((item) => item.id === lecturerId);
+          return lecturerId &&
+            lecturerId !== sourceLecturerId &&
+            lecturer
+            ? [
+                {
+                  key: `${courseCode}:${classIndex}`,
+                  lecturer,
+                  lecturerId,
+                  course,
+                  courseCode,
+                  classIndex,
+                  className: `${courseCode}.${classIndex + 1}`,
+                },
+              ]
+            : [];
+        },
+      );
+    };
     const swapSourceLecturer = lecturers.find(
       (lecturer) => lecturer.id === swapDraft?.sourceLecturerId,
     );
@@ -290,8 +307,20 @@ export function createPlottingComponent(deps) {
     const swapSourceEntries = swapDraft
       ? getLecturerAssignmentEntries(swapDraft.sourceLecturerId)
       : [];
+    const swapTargetCourseOptions = swapDraft
+      ? courses.filter(
+          (course) =>
+            getCourseSwapTargetEntries(
+              course.code,
+              swapDraft.sourceLecturerId,
+            ).length > 0,
+        )
+      : [];
     const swapTargetEntries = swapDraft
-      ? getLecturerAssignmentEntries(swapDraft.targetLecturerId)
+      ? getCourseSwapTargetEntries(
+          swapDraft.targetCourseCode,
+          swapDraft.sourceLecturerId,
+        )
       : [];
     const swapSourceEntry = swapSourceEntries.find(
       (entry) =>
@@ -301,7 +330,8 @@ export function createPlottingComponent(deps) {
     const swapTargetEntry = swapTargetEntries.find(
       (entry) =>
         entry.courseCode === swapDraft?.targetCourseCode &&
-        entry.classIndex === swapDraft?.targetClassIndex,
+        entry.classIndex === swapDraft?.targetClassIndex &&
+        entry.lecturerId === swapDraft?.targetLecturerId,
     );
     const swapExpertiseWarnings = [
       swapSourceLecturer &&
@@ -324,10 +354,10 @@ export function createPlottingComponent(deps) {
     );
     const selectedLecturerHasSwapTarget = Boolean(
       selectedLecturer &&
-        lecturers.some(
-          (lecturer) =>
-            lecturer.id !== selectedLecturer.id &&
-            getLecturerAssignmentEntries(lecturer.id).length > 0,
+        courses.some(
+          (course) =>
+            getCourseSwapTargetEntries(course.code, selectedLecturer.id).length >
+            0,
         ),
     );
     const openClassSwap = (lecturerId, preferredCourseCode) => {
@@ -336,22 +366,15 @@ export function createPlottingComponent(deps) {
         sourceEntries.find(
           (entry) => entry.courseCode === preferredCourseCode,
         ) || sourceEntries[0];
-      const targetLecturer = lecturers
-        .filter((lecturer) => lecturer.id !== lecturerId)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .find((lecturer) => getLecturerAssignmentEntries(lecturer.id).length);
-      const targetEntry = targetLecturer
-        ? getLecturerAssignmentEntries(targetLecturer.id)[0]
-        : null;
-      if (!sourceEntry || !targetLecturer || !targetEntry) return;
+      if (!sourceEntry) return;
       setSwapDraft({
         termCode: selectedTermCode,
         sourceLecturerId: lecturerId,
         sourceCourseCode: sourceEntry.courseCode,
         sourceClassIndex: sourceEntry.classIndex,
-        targetLecturerId: targetLecturer.id,
-        targetCourseCode: targetEntry.courseCode,
-        targetClassIndex: targetEntry.classIndex,
+        targetLecturerId: "",
+        targetCourseCode: "",
+        targetClassIndex: -1,
       });
     };
     const confirmClassSwap = () => {
@@ -1751,27 +1774,26 @@ export function createPlottingComponent(deps) {
                     </label>
                     <label className="space-y-1.5">
                       <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
-                        Swap with lecturer
+                        Target class
                       </span>
                       <div className="relative">
                         <select
-                          value={swapDraft.targetLecturerId}
+                          value={swapDraft.targetCourseCode}
                           onChange={(event) => {
-                            const targetLecturerId = event.target.value;
-                            const firstEntry =
-                              getLecturerAssignmentEntries(targetLecturerId)[0];
+                            const targetCourseCode = event.target.value;
                             setSwapDraft((current) => ({
                               ...current,
-                              targetLecturerId,
-                              targetCourseCode: firstEntry?.courseCode || "",
-                              targetClassIndex: firstEntry?.classIndex ?? -1,
+                              targetCourseCode,
+                              targetLecturerId: "",
+                              targetClassIndex: -1,
                             }));
                           }}
                           className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm text-[#3f4f58] outline-none focus:border-[#9bbfe8]"
                         >
-                          {swappableLecturers.map((lecturer) => (
-                            <option key={lecturer.id} value={lecturer.id}>
-                              {lecturer.name} ({lecturer.id})
+                          <option value="">Select target class...</option>
+                          {swapTargetCourseOptions.map((course) => (
+                            <option key={course.code} value={course.code}>
+                              {course.code} - {course.title}
                             </option>
                           ))}
                         </select>
@@ -1781,7 +1803,7 @@ export function createPlottingComponent(deps) {
                   </div>
                   <label className="block space-y-1.5">
                     <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
-                      {swapTargetLecturer?.name || "Other lecturer"}'s class
+                      Lecturer in target class
                     </span>
                     <div className="relative">
                       <select
@@ -1793,15 +1815,22 @@ export function createPlottingComponent(deps) {
                           if (!entry) return;
                           setSwapDraft((current) => ({
                             ...current,
-                            targetCourseCode: entry.courseCode,
+                            targetLecturerId: entry.lecturerId,
                             targetClassIndex: entry.classIndex,
                           }));
                         }}
+                        disabled={!swapDraft.targetCourseCode}
                         className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm text-[#3f4f58] outline-none focus:border-[#9bbfe8]"
                       >
+                        <option value="">
+                          {swapDraft.targetCourseCode
+                            ? "Select lecturer and class section..."
+                            : "Select a target class first"}
+                        </option>
                         {swapTargetEntries.map((entry) => (
                           <option key={entry.key} value={entry.key}>
-                            {entry.className} - {entry.course.title}
+                            {entry.lecturer.name} ({entry.lecturerId}) -{" "}
+                            {entry.className}
                           </option>
                         ))}
                       </select>
@@ -1837,16 +1866,28 @@ export function createPlottingComponent(deps) {
                     </div>
                   )}
                   <div
-                    className={`rounded-xl border p-4 ${swapExpertiseWarnings.length ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}
+                    className={`rounded-xl border p-4 ${!canConfirmSwap ? "border-slate-200 bg-slate-50" : swapExpertiseWarnings.length ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}
                   >
                     <div className="flex items-start gap-3">
-                      {swapExpertiseWarnings.length ? (
+                      {!canConfirmSwap ? (
+                        <Icons.swap className="mt-0.5 h-5 w-5 shrink-0 text-slate-600" />
+                      ) : swapExpertiseWarnings.length ? (
                         <Icons.warning className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
                       ) : (
                         <Icons.check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
                       )}
                       <div className="text-sm leading-6">
-                        {swapExpertiseWarnings.length ? (
+                        {!canConfirmSwap ? (
+                          <>
+                            <p className="font-medium text-slate-900">
+                              Complete the swap selection
+                            </p>
+                            <p className="text-slate-600">
+                              Choose a target class, then choose the lecturer and
+                              exact class section to review expertise.
+                            </p>
+                          </>
+                        ) : swapExpertiseWarnings.length ? (
                           <>
                             <p className="font-medium text-amber-950">
                               Expertise review needed
