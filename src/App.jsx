@@ -138,6 +138,14 @@ const Icons = {
       <path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.3-6.2 3.3 1.2-6.8-5-4.9 6.9-1L12 2Z" />
     </IconBase>
   ),
+  swap: (p) => (
+    <IconBase {...p}>
+      <path d="m16 3 4 4-4 4" />
+      <path d="M20 7H4" />
+      <path d="m8 21-4-4 4-4" />
+      <path d="M4 17h16" />
+    </IconBase>
+  ),
   trash: (p) => (
     <IconBase {...p}>
       <path d="M3 6h18" />
@@ -447,6 +455,25 @@ function toClassCount(value) {
 function resizeCourseAssignments(assignments = [], value = 0) {
   const count = toClassCount(value);
   return Array.from({ length: count }, (_, index) => assignments[index] || "");
+}
+
+function swapAssignmentSlots(assignmentMap = {}, source, target) {
+  const sourceAssignments = [...(assignmentMap[source.courseCode] || [])];
+  const sameCourse = source.courseCode === target.courseCode;
+  const targetAssignments = sameCourse
+    ? sourceAssignments
+    : [...(assignmentMap[target.courseCode] || [])];
+  const sourceLecturerId = sourceAssignments[source.classIndex] || "";
+  const targetLecturerId = targetAssignments[target.classIndex] || "";
+  if (!sourceLecturerId || !targetLecturerId) return assignmentMap;
+
+  sourceAssignments[source.classIndex] = targetLecturerId;
+  targetAssignments[target.classIndex] = sourceLecturerId;
+  return {
+    ...assignmentMap,
+    [source.courseCode]: sourceAssignments,
+    [target.courseCode]: targetAssignments,
+  };
 }
 
 function getPlottedCourseCounts(plotted = []) {
@@ -1095,6 +1122,7 @@ runSelfTests({
   resizeCourseAssignments,
   serializeCourseClassPlans,
   serializeLecturersForDatabase,
+  swapAssignmentSlots,
 });
 
 function getPlottedCountData(lecturers) {
@@ -1828,6 +1856,7 @@ const Plotting = createPlottingComponent({
   plottedCourseTitles,
   resizeCourseAssignments,
   rowsToObjects,
+  swapAssignmentSlots,
   toClassCount,
 });
 

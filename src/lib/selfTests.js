@@ -30,6 +30,7 @@ export function runSelfTests(deps) {
     resizeCourseAssignments,
     serializeCourseClassPlans,
     serializeLecturersForDatabase,
+    swapAssignmentSlots,
   } = deps;
 
   function runTests() {
@@ -157,6 +158,16 @@ export function runSelfTests(deps) {
       reducedAssignmentPlan.length === 110 &&
         reducedAssignmentPlan[109] === "LECT110",
       "Reducing planned classes should remove surplus assignment slots",
+    );
+    const swappedAssignments = swapAssignmentSlots(
+      { COURSE101: ["LECT001"], COURSE102: ["LECT002"] },
+      { courseCode: "COURSE101", classIndex: 0 },
+      { courseCode: "COURSE102", classIndex: 0 },
+    );
+    console.assert(
+      swappedAssignments.COURSE101[0] === "LECT002" &&
+        swappedAssignments.COURSE102[0] === "LECT001",
+      "Class swaps should exchange both assignment slots atomically",
     );
     console.assert(
       expertiseMatchesCourse(testLecturers[0], testCourses[0]),

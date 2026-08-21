@@ -38,6 +38,7 @@ export function createPlottingComponent(deps) {
     plottedCourseTitles,
     resizeCourseAssignments,
     rowsToObjects,
+    swapAssignmentSlots,
     toClassCount,
   } = deps;
 
@@ -146,6 +147,8 @@ export function createPlottingComponent(deps) {
     const [selectedCourseCode, setSelectedCourseCode] = useState("");
     const [selectedLecturerId, setSelectedLecturerId] = useState("");
     const [classCountReduction, setClassCountReduction] = useState(null);
+    const [swapDraft, setSwapDraft] = useState(null);
+    const [swapUndo, setSwapUndo] = useState(null);
     const plannedCounts = useMemo(
       () => getCourseClassPlan(courseClassPlans, selectedTermCode),
       [courseClassPlans, selectedTermCode],
@@ -255,6 +258,175 @@ export function createPlottingComponent(deps) {
         ),
       [selectedLecturer],
     );
+    const getLecturerAssignmentEntries = (lecturerId) =>
+      courses.flatMap((course) =>
+        (assignmentMap[course.code] || []).flatMap((assignedId, classIndex) =>
+          assignedId === lecturerId
+            ? [
+                {
+                  key: `${course.code}:${classIndex}`,
+                  course,
+                  courseCode: course.code,
+                  classIndex,
+                  className: `${course.code}.${classIndex + 1}`,
+                },
+              ]
+            : [],
+        ),
+      );
+    const swappableLecturers = lecturers
+      .filter(
+        (lecturer) =>
+          lecturer.id !== swapDraft?.sourceLecturerId &&
+          getLecturerAssignmentEntries(lecturer.id).length > 0,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const swapSourceLecturer = lecturers.find(
+      (lecturer) => lecturer.id === swapDraft?.sourceLecturerId,
+    );
+    const swapTargetLecturer = lecturers.find(
+      (lecturer) => lecturer.id === swapDraft?.targetLecturerId,
+    );
+    const swapSourceEntries = swapDraft
+      ? getLecturerAssignmentEntries(swapDraft.sourceLecturerId)
+      : [];
+    const swapTargetEntries = swapDraft
+      ? getLecturerAssignmentEntries(swapDraft.targetLecturerId)
+      : [];
+    const swapSourceEntry = swapSourceEntries.find(
+      (entry) =>
+        entry.courseCode === swapDraft?.sourceCourseCode &&
+        entry.classIndex === swapDraft?.sourceClassIndex,
+    );
+    const swapTargetEntry = swapTargetEntries.find(
+      (entry) =>
+        entry.courseCode === swapDraft?.targetCourseCode &&
+        entry.classIndex === swapDraft?.targetClassIndex,
+    );
+    const swapExpertiseWarnings = [
+      swapSourceLecturer &&
+      swapTargetEntry &&
+      !expertiseMatchesCourse(swapSourceLecturer, swapTargetEntry.course)
+        ? `${swapSourceLecturer.name} has no listed expertise match for ${swapTargetEntry.course.title}.`
+        : "",
+      swapTargetLecturer &&
+      swapSourceEntry &&
+      !expertiseMatchesCourse(swapTargetLecturer, swapSourceEntry.course)
+        ? `${swapTargetLecturer.name} has no listed expertise match for ${swapSourceEntry.course.title}.`
+        : "",
+    ].filter(Boolean);
+    const canConfirmSwap = Boolean(
+      swapSourceLecturer &&
+        swapTargetLecturer &&
+        swapSourceEntry &&
+        swapTargetEntry &&
+        swapSourceLecturer.id !== swapTargetLecturer.id,
+    );
+    const selectedLecturerHasSwapTarget = Boolean(
+      selectedLecturer &&
+        lecturers.some(
+          (lecturer) =>
+            lecturer.id !== selectedLecturer.id &&
+            getLecturerAssignmentEntries(lecturer.id).length > 0,
+        ),
+    );
+    const openClassSwap = (lecturerId, preferredCourseCode) => {
+      const sourceEntries = getLecturerAssignmentEntries(lecturerId);
+      const sourceEntry =
+        sourceEntries.find(
+          (entry) => entry.courseCode === preferredCourseCode,
+        ) || sourceEntries[0];
+      const targetLecturer = lecturers
+        .filter((lecturer) => lecturer.id !== lecturerId)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .find((lecturer) => getLecturerAssignmentEntries(lecturer.id).length);
+      const targetEntry = targetLecturer
+        ? getLecturerAssignmentEntries(targetLecturer.id)[0]
+        : null;
+      if (!sourceEntry || !targetLecturer || !targetEntry) return;
+      setSwapDraft({
+        termCode: selectedTermCode,
+        sourceLecturerId: lecturerId,
+        sourceCourseCode: sourceEntry.courseCode,
+        sourceClassIndex: sourceEntry.classIndex,
+        targetLecturerId: targetLecturer.id,
+        targetCourseCode: targetEntry.courseCode,
+        targetClassIndex: targetEntry.classIndex,
+      });
+    };
+    const confirmClassSwap = () => {
+      if (!canConfirmSwap || swapDraft.termCode !== selectedTermCode) return;
+      const previousAssignmentMap = JSON.parse(JSON.stringify(assignmentMap));
+      const nextAssignmentMap = swapAssignmentSlots(
+        assignmentMap,
+        {
+          courseCode: swapSourceEntry.courseCode,
+          classIndex: swapSourceEntry.classIndex,
+        },
+        {
+          courseCode: swapTargetEntry.courseCode,
+          classIndex: swapTargetEntry.classIndex,
+        },
+      );
+      setCourseClassPlans((prev) => {
+        const { counts, assignments } = getCoursePlanParts(
+          prev,
+          selectedTermCode,
+        );
+        return {
+          ...prev,
+          [selectedTermCode]: {
+            counts,
+            assignments: {
+              ...assignments,
+              [swapSourceEntry.courseCode]:
+                nextAssignmentMap[swapSourceEntry.courseCode],
+              [swapTargetEntry.courseCode]:
+                nextAssignmentMap[swapTargetEntry.courseCode],
+            },
+          },
+        };
+      });
+      setLecturers((prev) =>
+        applyCourseAssignmentsToLecturers(prev, courses, nextAssignmentMap),
+      );
+      setSwapUndo({
+        termCode: selectedTermCode,
+        assignmentMap: previousAssignmentMap,
+        description: `${swapSourceLecturer.name}: ${swapSourceEntry.className} and ${swapTargetLecturer.name}: ${swapTargetEntry.className}`,
+      });
+      setAutoPilotUndo(null);
+      setAutoPilotReview(null);
+      setImportMessage(
+        `Swapped ${swapSourceLecturer.name}'s ${swapSourceEntry.className} with ${swapTargetLecturer.name}'s ${swapTargetEntry.className}.`,
+      );
+      setSwapDraft(null);
+      setSelectedLecturerId("");
+    };
+    const undoClassSwap = () => {
+      if (!swapUndo || swapUndo.termCode !== selectedTermCode) return;
+      setCourseClassPlans((prev) => {
+        const { counts } = getCoursePlanParts(prev, selectedTermCode);
+        return {
+          ...prev,
+          [selectedTermCode]: {
+            counts,
+            assignments: swapUndo.assignmentMap,
+          },
+        };
+      });
+      setLecturers((prev) =>
+        applyCourseAssignmentsToLecturers(
+          prev,
+          courses,
+          swapUndo.assignmentMap,
+        ),
+      );
+      setAutoPilotUndo(null);
+      setAutoPilotReview(null);
+      setImportMessage(`Restored the assignments before ${swapUndo.description}.`);
+      setSwapUndo(null);
+    };
     const applyCoursePlanCount = (courseCode, value) => {
       const count = toClassCount(value);
       const nextCourseAssignments = resizeCourseAssignments(
@@ -265,6 +437,7 @@ export function createPlottingComponent(deps) {
         ...assignmentMap,
         [courseCode]: nextCourseAssignments,
       };
+      setSwapUndo(null);
       setAutoPilotReview(null);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(
@@ -338,6 +511,7 @@ export function createPlottingComponent(deps) {
         ...assignmentMap,
         [courseCode]: nextCourseAssignments,
       };
+      setSwapUndo(null);
       setAutoPilotReview(null);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(
@@ -373,6 +547,7 @@ export function createPlottingComponent(deps) {
         ...assignmentMap,
         [courseCode]: nextCourseAssignments,
       };
+      setSwapUndo(null);
       setAutoPilotReview(null);
       setImportMessage("");
       setCourseClassPlans((prev) => {
@@ -451,6 +626,7 @@ export function createPlottingComponent(deps) {
         ...assignmentMap,
         [courseCode]: nextCourseAssignments,
       };
+      setSwapUndo(null);
       setAutoPilotReview(null);
       setCourseClassPlans((prev) => {
         const { counts, assignments } = getCoursePlanParts(
@@ -513,6 +689,7 @@ export function createPlottingComponent(deps) {
     };
     const applyImportReview = () => {
       if (!importReview) return;
+      setSwapUndo(null);
       const nextAssignmentMap = mergeAssignmentMapWithLecturerLimit(
         assignmentMap,
         importReview.imported.assignments,
@@ -584,6 +761,7 @@ export function createPlottingComponent(deps) {
     };
     const applyAutoPilot = () => {
       if (!autoPilotPreview) return;
+      setSwapUndo(null);
       const { result, nextCounts } = autoPilotPreview;
       setAutoPilotUndo({
         assignmentMap: JSON.parse(JSON.stringify(assignmentMap)),
@@ -618,6 +796,7 @@ export function createPlottingComponent(deps) {
     };
     const undoAutoPilot = () => {
       if (!autoPilotUndo) return;
+      setSwapUndo(null);
       setCourseClassPlans((prev) => {
         const { counts } = getCoursePlanParts(prev, selectedTermCode);
         return {
@@ -753,11 +932,21 @@ export function createPlottingComponent(deps) {
           </div>
         </Card>
         {importMessage && (
-          <p
-            className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-[#dff3e6] text-[#315f45]" : "bg-[#fde2e2] text-[#8a3a3a]"}`}
+          <div
+            className={`flex flex-col gap-3 rounded-xl px-3 py-2 text-sm font-normal sm:flex-row sm:items-center sm:justify-between ${/^(Imported|Swapped|Restored)/.test(importMessage) ? "bg-[#dff3e6] text-[#315f45]" : "bg-[#fde2e2] text-[#8a3a3a]"}`}
           >
-            {importMessage}
-          </p>
+            <span>{importMessage}</span>
+            {swapUndo?.termCode === selectedTermCode && (
+              <Button
+                variant="ghost"
+                className="shrink-0 self-end py-1.5 sm:self-auto"
+                onClick={undoClassSwap}
+              >
+                <Icons.swap className="h-4 w-4" />
+                Undo swap
+              </Button>
+            )}
+          </div>
         )}
         <div className="grid gap-4 md:grid-cols-3">
           <Stat
@@ -1458,9 +1647,9 @@ export function createPlottingComponent(deps) {
                         assignmentMap[course.code] || []
                       ).filter(Boolean).length;
                       return (
-                        <label
+                        <div
                           key={`${selectedLecturer.id}-${course.code}`}
-                          className="grid grid-cols-[1fr_76px] items-center gap-3 rounded-xl border border-[#dce9e6] bg-[#fffffb] p-3"
+                          className={`grid items-center gap-3 rounded-xl border border-[#dce9e6] bg-[#fffffb] p-3 ${count ? "grid-cols-[1fr_auto_76px]" : "grid-cols-[1fr_76px]"}`}
                         >
                           <span>
                             <span className="block text-sm font-normal text-[#26353f]">
@@ -1470,6 +1659,27 @@ export function createPlottingComponent(deps) {
                               {course.code} · {assigned} / {planned} assigned
                             </span>
                           </span>
+                          {count > 0 && (
+                            <Button
+                              variant="ghost"
+                              className="px-2.5"
+                              onClick={() =>
+                                openClassSwap(
+                                  selectedLecturer.id,
+                                  course.code,
+                                )
+                              }
+                              disabled={!selectedLecturerHasSwapTarget}
+                              title={
+                                selectedLecturerHasSwapTarget
+                                  ? `Swap ${course.title} with another lecturer's class`
+                                  : "No other lecturer has an assigned class to swap."
+                              }
+                            >
+                              <Icons.swap className="h-4 w-4" />
+                              Swap
+                            </Button>
+                          )}
                           <input
                             type="number"
                             min="0"
@@ -1489,8 +1699,9 @@ export function createPlottingComponent(deps) {
                                 : undefined
                             }
                             disabled={maxCountForCourse === 0}
+                            aria-label={`Classes assigned to ${selectedLecturer.name} for ${course.title}`}
                           />
-                        </label>
+                        </div>
                       );
                     })}
                   </div>
@@ -1500,6 +1711,180 @@ export function createPlottingComponent(deps) {
                       onClick={() => setSelectedLecturerId("")}
                     >
                       Done
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+            {swapDraft && swapSourceLecturer && (
+              <Modal title="Swap class assignments" onClose={() => setSwapDraft(null)}>
+                <div className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
+                        {swapSourceLecturer.name}'s class
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={swapSourceEntry?.key || ""}
+                          onChange={(event) => {
+                            const entry = swapSourceEntries.find(
+                              (item) => item.key === event.target.value,
+                            );
+                            if (!entry) return;
+                            setSwapDraft((current) => ({
+                              ...current,
+                              sourceCourseCode: entry.courseCode,
+                              sourceClassIndex: entry.classIndex,
+                            }));
+                          }}
+                          className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm text-[#3f4f58] outline-none focus:border-[#9bbfe8]"
+                        >
+                          {swapSourceEntries.map((entry) => (
+                            <option key={entry.key} value={entry.key}>
+                              {entry.className} - {entry.course.title}
+                            </option>
+                          ))}
+                        </select>
+                        <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                      </div>
+                    </label>
+                    <label className="space-y-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
+                        Swap with lecturer
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={swapDraft.targetLecturerId}
+                          onChange={(event) => {
+                            const targetLecturerId = event.target.value;
+                            const firstEntry =
+                              getLecturerAssignmentEntries(targetLecturerId)[0];
+                            setSwapDraft((current) => ({
+                              ...current,
+                              targetLecturerId,
+                              targetCourseCode: firstEntry?.courseCode || "",
+                              targetClassIndex: firstEntry?.classIndex ?? -1,
+                            }));
+                          }}
+                          className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm text-[#3f4f58] outline-none focus:border-[#9bbfe8]"
+                        >
+                          {swappableLecturers.map((lecturer) => (
+                            <option key={lecturer.id} value={lecturer.id}>
+                              {lecturer.name} ({lecturer.id})
+                            </option>
+                          ))}
+                        </select>
+                        <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                      </div>
+                    </label>
+                  </div>
+                  <label className="block space-y-1.5">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#6d7d86]">
+                      {swapTargetLecturer?.name || "Other lecturer"}'s class
+                    </span>
+                    <div className="relative">
+                      <select
+                        value={swapTargetEntry?.key || ""}
+                        onChange={(event) => {
+                          const entry = swapTargetEntries.find(
+                            (item) => item.key === event.target.value,
+                          );
+                          if (!entry) return;
+                          setSwapDraft((current) => ({
+                            ...current,
+                            targetCourseCode: entry.courseCode,
+                            targetClassIndex: entry.classIndex,
+                          }));
+                        }}
+                        className="h-12 w-full appearance-none rounded-xl border border-[#dce9e6] bg-[#fffffb] px-3 pr-9 text-sm text-[#3f4f58] outline-none focus:border-[#9bbfe8]"
+                      >
+                        {swapTargetEntries.map((entry) => (
+                          <option key={entry.key} value={entry.key}>
+                            {entry.className} - {entry.course.title}
+                          </option>
+                        ))}
+                      </select>
+                      <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
+                    </div>
+                  </label>
+                  {canConfirmSwap && (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] p-4">
+                        <p className="font-medium text-[#26353f]">
+                          {swapSourceLecturer.name}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#61717b]">
+                          Gives {swapSourceEntry.className} and receives{" "}
+                          <span className="font-medium text-[#315577]">
+                            {swapTargetEntry.className} -{" "}
+                            {swapTargetEntry.course.title}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[#dce9e6] bg-[#f7fbf6] p-4">
+                        <p className="font-medium text-[#26353f]">
+                          {swapTargetLecturer.name}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[#61717b]">
+                          Gives {swapTargetEntry.className} and receives{" "}
+                          <span className="font-medium text-[#315577]">
+                            {swapSourceEntry.className} -{" "}
+                            {swapSourceEntry.course.title}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div
+                    className={`rounded-xl border p-4 ${swapExpertiseWarnings.length ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {swapExpertiseWarnings.length ? (
+                        <Icons.warning className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                      ) : (
+                        <Icons.check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+                      )}
+                      <div className="text-sm leading-6">
+                        {swapExpertiseWarnings.length ? (
+                          <>
+                            <p className="font-medium text-amber-950">
+                              Expertise review needed
+                            </p>
+                            {swapExpertiseWarnings.map((warning) => (
+                              <p key={warning} className="text-amber-800">
+                                {warning}
+                              </p>
+                            ))}
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium text-emerald-950">
+                              Expertise checks passed
+                            </p>
+                            <p className="text-emerald-800">
+                              Both lecturers have a listed expertise match for
+                              their incoming class.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-sm leading-6 text-[#61717b]">
+                    Each lecturer keeps the same total number of classes. Both
+                    assignment changes will be synchronized together.
+                  </p>
+                  <div className="flex justify-end gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setSwapDraft(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={confirmClassSwap} disabled={!canConfirmSwap}>
+                      <Icons.swap className="h-4 w-4" />
+                      Confirm swap
                     </Button>
                   </div>
                 </div>
