@@ -69,6 +69,58 @@ export function createPlottingComponent(deps) {
     );
   }
 
+  function runAutoPilotOnMainThread(payload) {
+    return new Promise((resolve, reject) => {
+      window.setTimeout(() => {
+        try {
+          resolve(
+            buildAutoPilotPlotting(
+              payload.lecturers,
+              payload.courses,
+              payload.classCounts,
+              payload.assignmentMap,
+            ),
+          );
+        } catch (error) {
+          reject(error);
+        }
+      }, 0);
+    });
+  }
+
+  function runAutoPilotCalculation(payload) {
+    if (typeof Worker === "undefined")
+      return runAutoPilotOnMainThread(payload);
+
+    return new Promise((resolve, reject) => {
+      let worker;
+      try {
+        worker = new Worker(
+          new URL("../workers/autoPilot.worker.js", import.meta.url),
+          { type: "module" },
+        );
+      } catch {
+        runAutoPilotOnMainThread(payload).then(resolve, reject);
+        return;
+      }
+      const finish = () => worker.terminate();
+      worker.onmessage = (event) => {
+        finish();
+        if (event.data.error) {
+          reject(new Error(event.data.error));
+          return;
+        }
+        resolve(event.data.result);
+      };
+      worker.onerror = (event) => {
+        event.preventDefault?.();
+        finish();
+        runAutoPilotOnMainThread(payload).then(resolve, reject);
+      };
+      worker.postMessage(payload);
+    });
+  }
+
   function Plotting({
     lecturers,
     setLecturers,
@@ -90,6 +142,7 @@ export function createPlottingComponent(deps) {
     const [autoPilotReview, setAutoPilotReview] = useState(null);
     const [autoPilotPreview, setAutoPilotPreview] = useState(null);
     const [autoPilotUndo, setAutoPilotUndo] = useState(null);
+    const [autoPilotRunning, setAutoPilotRunning] = useState(false);
     const [selectedCourseCode, setSelectedCourseCode] = useState("");
     const [selectedLecturerId, setSelectedLecturerId] = useState("");
     const [classCountReduction, setClassCountReduction] = useState(null);
@@ -490,7 +543,7 @@ export function createPlottingComponent(deps) {
       );
       setImportReview(null);
     };
-    const runAutoPilot = () => {
+    const runAutoPilot = async () => {
       if (!selectedTermCode) {
         setAutoPilotReview({
           notes: [
@@ -502,17 +555,32 @@ export function createPlottingComponent(deps) {
         });
         return;
       }
-      const result = buildAutoPilotPlotting(
-        lecturers,
-        courses,
-        classCounts,
-        assignmentMap,
-      );
-      const nextCounts = Object.fromEntries(
-        courses.map((course) => [course.code, classCounts[course.code] || 0]),
-      );
-      setAutoPilotPreview({ result, nextCounts });
+      if (autoPilotRunning) return;
+      setAutoPilotRunning(true);
       setImportMessage("");
+      try {
+        const result = await runAutoPilotCalculation({
+          lecturers,
+          courses,
+          classCounts,
+          assignmentMap,
+        });
+        const nextCounts = Object.fromEntries(
+          courses.map((course) => [course.code, classCounts[course.code] || 0]),
+        );
+        setAutoPilotPreview({ result, nextCounts });
+      } catch (error) {
+        setAutoPilotReview({
+          notes: [
+            `Auto-pilot could not complete: ${error.message || "Unknown error"}`,
+          ],
+          warnings: [],
+          explanations: [],
+          metrics: null,
+        });
+      } finally {
+        setAutoPilotRunning(false);
+      }
     };
     const applyAutoPilot = () => {
       if (!autoPilotPreview) return;
@@ -632,12 +700,20 @@ export function createPlottingComponent(deps) {
                   onChange={handleImport}
                 />
                 <Button
-                  className="h-12 whitespace-nowrap px-4"
+                  className="h-12 min-w-44 whitespace-nowrap px-4"
                   onClick={runAutoPilot}
-                  disabled={!plannedTotal}
+                  disabled={!plannedTotal || autoPilotRunning}
+                  aria-busy={autoPilotRunning}
                 >
-                  <Icons.check className="h-4 w-4" />
-                  Run auto-pilot
+                  {autoPilotRunning ? (
+                    <span
+                      className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Icons.check className="h-4 w-4" />
+                  )}
+                  {autoPilotRunning ? "Running auto-pilot..." : "Run auto-pilot"}
                 </Button>
                 {autoPilotUndo && (
                   <Button
@@ -1440,6 +1516,27 @@ export function createPlottingComponent(deps) {
             onApply={applyImportReview}
             onClose={() => setImportReview(null)}
           />
+        )}
+        {autoPilotRunning && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#24333f]/35 p-4"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div className="w-full max-w-sm rounded-xl border border-[#dce9e6] bg-[#fffffb] p-6 text-center shadow-2xl shadow-[#9fb8b1]/30">
+              <span
+                className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-[#d7e6f7] border-t-[#005baa]"
+                aria-hidden="true"
+              />
+              <h2 className="mt-4 text-lg font-medium text-[#26353f]">
+                Running Auto-Pilot
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#61717b]">
+                Preparing the plotting proposal and checking assignment rules.
+              </p>
+            </div>
+          </div>
         )}
         {classCountReduction && (
           <Modal
