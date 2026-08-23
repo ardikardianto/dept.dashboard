@@ -307,6 +307,11 @@ export function createPlottingComponent(deps) {
     const swapSourceEntries = swapDraft
       ? getLecturerAssignmentEntries(swapDraft.sourceLecturerId)
       : [];
+    const swapSourceEntry = swapSourceEntries.find(
+      (entry) =>
+        entry.courseCode === swapDraft?.sourceCourseCode &&
+        entry.classIndex === swapDraft?.sourceClassIndex,
+    );
     const swapTargetCourseOptions = swapDraft
       ? courses.filter(
           (course) =>
@@ -321,12 +326,20 @@ export function createPlottingComponent(deps) {
           swapDraft.targetCourseCode,
           swapDraft.sourceLecturerId,
         )
+          .map((entry) => ({
+            ...entry,
+            recommended: Boolean(
+              swapSourceEntry &&
+                expertiseMatchesCourse(entry.lecturer, swapSourceEntry.course),
+            ),
+          }))
+          .sort(
+            (a, b) =>
+              Number(b.recommended) - Number(a.recommended) ||
+              a.lecturer.name.localeCompare(b.lecturer.name) ||
+              a.classIndex - b.classIndex,
+          )
       : [];
-    const swapSourceEntry = swapSourceEntries.find(
-      (entry) =>
-        entry.courseCode === swapDraft?.sourceCourseCode &&
-        entry.classIndex === swapDraft?.sourceClassIndex,
-    );
     const swapTargetEntry = swapTargetEntries.find(
       (entry) =>
         entry.courseCode === swapDraft?.targetCourseCode &&
@@ -1829,6 +1842,7 @@ export function createPlottingComponent(deps) {
                         </option>
                         {swapTargetEntries.map((entry) => (
                           <option key={entry.key} value={entry.key}>
+                            {entry.recommended ? "Recommended - " : ""}
                             {entry.lecturer.name} ({entry.lecturerId}) -{" "}
                             {entry.className}
                           </option>
