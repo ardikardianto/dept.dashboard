@@ -344,24 +344,65 @@ export function createPlottingComponent(deps) {
         )
       : [];
     const swapTargetEntries = swapDraft
-      ? getCourseSwapTargetEntries(
-          swapDraft.targetCourseCode,
-          swapDraft.sourceLecturerId,
-        )
-          .map((entry) => ({
-            ...entry,
-            recommended: Boolean(
-              swapSourceEntry &&
-                expertiseMatchesCourse(entry.lecturer, swapSourceEntry.course),
-            ),
-          }))
-          .sort(
-            (a, b) =>
-              Number(b.recommended) - Number(a.recommended) ||
-              a.lecturer.name.localeCompare(b.lecturer.name) ||
-              a.classIndex - b.classIndex,
+      ? (() => {
+          const rankedEntries = getCourseSwapTargetEntries(
+            swapDraft.targetCourseCode,
+            swapDraft.sourceLecturerId,
           )
+            .map((entry) => {
+              const targetMatchesSource = Boolean(
+                swapSourceEntry &&
+                  expertiseMatchesCourse(entry.lecturer, swapSourceEntry.course),
+              );
+              const sourceMatchesTarget = Boolean(
+                swapSourceLecturer &&
+                  expertiseMatchesCourse(swapSourceLecturer, entry.course),
+              );
+              return {
+                ...entry,
+                targetMatchesSource,
+                sourceMatchesTarget,
+                recommendationScore:
+                  Number(targetMatchesSource) * 100 +
+                  Number(sourceMatchesTarget) * 40 +
+                  Number(entry.lecturer.rating || 0) * 5,
+              };
+            })
+            .sort(
+              (a, b) =>
+                b.recommendationScore - a.recommendationScore ||
+                a.lecturer.name.localeCompare(b.lecturer.name) ||
+                a.classIndex - b.classIndex,
+            );
+          const hasExpertiseRecommendation = rankedEntries.some(
+            (entry) => entry.targetMatchesSource,
+          );
+          return rankedEntries.map((entry, index) => {
+            const fallbackRecommendation =
+              !hasExpertiseRecommendation && index === 0;
+            const recommended =
+              entry.targetMatchesSource || fallbackRecommendation;
+            return {
+              ...entry,
+              recommended,
+              fallbackRecommendation,
+              recommendationLabel: entry.targetMatchesSource
+                ? entry.sourceMatchesTarget
+                  ? "Recommended: two-way expertise"
+                  : "Recommended: receiving-class expertise"
+                : fallbackRecommendation
+                  ? "Recommended fallback: highest-rated candidate"
+                  : "",
+            };
+          });
+        })()
       : [];
+    const recommendedSwapTargetEntries = swapTargetEntries.filter(
+      (entry) => entry.recommended,
+    );
+    const otherSwapTargetEntries = swapTargetEntries.filter(
+      (entry) => !entry.recommended,
+    );
     const swapTargetEntry = swapTargetEntries.find(
       (entry) =>
         entry.courseCode === swapDraft?.targetCourseCode &&
@@ -1879,16 +1920,54 @@ export function createPlottingComponent(deps) {
                             ? "Select lecturer and class section..."
                             : "Select a target class first"}
                         </option>
-                        {swapTargetEntries.map((entry) => (
-                          <option key={entry.key} value={entry.key}>
-                            {entry.recommended ? "Recommended - " : ""}
-                            {entry.lecturer.name} ({entry.lecturerId}) -{" "}
-                            {entry.className}
-                          </option>
-                        ))}
+                        {recommendedSwapTargetEntries.length > 0 && (
+                          <optgroup label="Recommended lecturers">
+                            {recommendedSwapTargetEntries.map((entry) => (
+                              <option key={entry.key} value={entry.key}>
+                                {entry.recommendationLabel} -{" "}
+                                {entry.lecturer.name} ({entry.lecturerId}) -{" "}
+                                {entry.className}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {otherSwapTargetEntries.length > 0 && (
+                          <optgroup label="Other lecturers in target class">
+                            {otherSwapTargetEntries.map((entry) => (
+                              <option key={entry.key} value={entry.key}>
+                                {entry.lecturer.name} ({entry.lecturerId}) -{" "}
+                                {entry.className}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                       <Icons.chevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 text-[#8aa1ad]" />
                     </div>
+                    {recommendedSwapTargetEntries.length > 0 && (
+                      <p
+                        className={`rounded-lg px-3 py-2 text-xs leading-5 ${recommendedSwapTargetEntries[0].fallbackRecommendation ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}
+                        aria-live="polite"
+                      >
+                        <span className="font-medium">
+                          {recommendedSwapTargetEntries[0]
+                            .fallbackRecommendation
+                            ? "Recommended fallback"
+                            : "Recommended"}
+                          :{" "}
+                        </span>
+                        {recommendedSwapTargetEntries
+                          .map(
+                            (entry) =>
+                              `${entry.lecturer.name} (${entry.className})`,
+                          )
+                          .join(", ")}
+                        {recommendedSwapTargetEntries[0]
+                          .fallbackRecommendation
+                          ? ". No exact expertise match is available in this target class."
+                          : ". Expertise matches the class they would receive."}
+                      </p>
+                    )}
                   </label>
                   {canConfirmSwap && (
                     <div className="grid gap-3 md:grid-cols-2">
