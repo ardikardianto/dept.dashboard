@@ -1,3 +1,5 @@
+import { strFromU8, unzip } from "fflate";
+
 const isBlankRow = (row) =>
   !row ||
   Object.values(row).every((value) => String(value ?? "").trim() === "");
@@ -129,7 +131,7 @@ export function createImportExportTools(deps) {
       !window.showSaveFilePicker ||
       !window.isSecureContext
     )
-      return false;
+      return { handled: false, cancelled: false };
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: filename,
@@ -138,14 +140,21 @@ export function createImportExportTools(deps) {
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return true;
+      return { handled: true, cancelled: false };
     } catch (error) {
-      if (error?.name === "AbortError") return true;
-      return false;
+      if (error?.name === "AbortError")
+        return { handled: true, cancelled: true };
+      return { handled: false, cancelled: false };
     }
   }
 
   function triggerAnchorDownload(filename, blob) {
+    if (
+      typeof document === "undefined" ||
+      typeof URL === "undefined" ||
+      typeof URL.createObjectURL !== "function"
+    )
+      throw new Error("Downloads are not available in this app window.");
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -153,13 +162,7 @@ export function createImportExportTools(deps) {
     anchor.rel = "noopener";
     anchor.style.display = "none";
     document.body.appendChild(anchor);
-    anchor.dispatchEvent(
-      new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      }),
-    );
+    anchor.click();
     window.setTimeout(() => {
       anchor.remove();
       URL.revokeObjectURL(url);
@@ -169,8 +172,19 @@ export function createImportExportTools(deps) {
   async function downloadBlob(filename, content, type) {
     const blob =
       content instanceof Blob ? content : new Blob([content], { type });
-    if (await writeBlobWithFileSystemAccess(filename, blob, type)) return;
+    const pickerResult = await writeBlobWithFileSystemAccess(
+      filename,
+      blob,
+      type,
+    );
+    if (pickerResult.handled)
+      return {
+        filename,
+        cancelled: pickerResult.cancelled,
+        method: "file-picker",
+      };
     triggerAnchorDownload(filename, blob);
+    return { filename, cancelled: false, method: "download" };
   }
 
   const xlsxContentType =
@@ -332,10 +346,11 @@ export function createImportExportTools(deps) {
     ]);
   }
 
-  function exportLecturersToXLSX(lecturers, courses) {
+  async function exportLecturersToXLSX(lecturers, courses) {
     const rows = buildLecturerExportRows(lecturers, courses);
-    if (!rows.length) return;
+    if (!rows.length) return null;
     const filenameDate = new Date().toISOString().slice(0, 10);
+    const filename = `UT_English_Lecturers_${filenameDate}.xlsx`;
     if (
       typeof window !== "undefined" &&
       window.XLSX?.utils &&
@@ -344,29 +359,27 @@ export function createImportExportTools(deps) {
       const worksheet = window.XLSX.utils.json_to_sheet(rows);
       const workbook = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(workbook, worksheet, "Lecturers");
-      window.XLSX.writeFile(
-        workbook,
-        `UT_English_Lecturers_${filenameDate}.xlsx`,
-      );
-      return;
+      await Promise.resolve(window.XLSX.writeFile(workbook, filename));
+      return { filename, cancelled: false, method: "xlsx-library" };
     }
-    downloadBlob(
-      `UT_English_Lecturers_${filenameDate}.xlsx`,
+    return downloadBlob(
+      filename,
       createXLSX(rows),
       xlsxContentType,
     );
   }
 
-  function exportLecturerTemplateToXLSX() {
+  async function exportLecturerTemplateToXLSX() {
     const filenameDate = new Date().toISOString().slice(0, 10);
-    downloadBlob(
-      `UT_English_Lecturers_Template_${filenameDate}.xlsx`,
+    const filename = `UT_English_Lecturers_Template_${filenameDate}.xlsx`;
+    return downloadBlob(
+      filename,
       createXLSX(buildLecturerTemplateRows()),
       xlsxContentType,
     );
   }
 
-  function exportPlottingToXLSX(
+  async function exportPlottingToXLSX(
     lecturers,
     courses,
     plannedCounts,
@@ -378,8 +391,9 @@ export function createImportExportTools(deps) {
       plannedCounts,
       assignmentMap,
     );
-    if (!rows.length) return;
+    if (!rows.length) return null;
     const filenameDate = new Date().toISOString().slice(0, 10);
+    const filename = `Plotting_${filenameDate}.xlsx`;
     if (
       typeof window !== "undefined" &&
       window.XLSX?.utils &&
@@ -388,11 +402,11 @@ export function createImportExportTools(deps) {
       const worksheet = window.XLSX.utils.json_to_sheet(rows);
       const workbook = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-      window.XLSX.writeFile(workbook, `Plotting_${filenameDate}.xlsx`);
-      return;
+      await Promise.resolve(window.XLSX.writeFile(workbook, filename));
+      return { filename, cancelled: false, method: "xlsx-library" };
     }
-    downloadBlob(
-      `Plotting_${filenameDate}.xlsx`,
+    return downloadBlob(
+      filename,
       createXLSX(rows, "Sheet1"),
       xlsxContentType,
     );
@@ -442,71 +456,27 @@ export function createImportExportTools(deps) {
     );
   }
 
-  function getUint16(view, offset) {
-    return view.getUint16(offset, true);
-  }
-
-  function getUint32(view, offset) {
-    return view.getUint32(offset, true);
-  }
-
-  async function inflateZipEntry(bytes) {
-    for (const format of ["deflate-raw", "deflate"]) {
-      try {
-        const stream = new Blob([bytes])
-          .stream()
-          .pipeThrough(new DecompressionStream(format));
-        return new Uint8Array(await new Response(stream).arrayBuffer());
-      } catch {
-        // Try the next supported browser decompression format.
-      }
-    }
-    throw new Error("Could not decompress this XLSX file.");
-  }
-
-  async function readZipEntries(buffer) {
-    const bytes = new Uint8Array(buffer);
-    const view = new DataView(buffer);
-    const decoder = new TextDecoder();
-    let eocdOffset = -1;
-    for (let i = bytes.length - 22; i >= 0; i -= 1) {
-      if (getUint32(view, i) === 0x06054b50) {
-        eocdOffset = i;
-        break;
-      }
-    }
-    if (eocdOffset < 0) throw new Error("Invalid XLSX file.");
-    const entryCount = getUint16(view, eocdOffset + 10);
-    let centralOffset = getUint32(view, eocdOffset + 16);
-    const entries = {};
-
-    for (let i = 0; i < entryCount; i += 1) {
-      if (getUint32(view, centralOffset) !== 0x02014b50)
-        throw new Error("Invalid XLSX directory.");
-      const method = getUint16(view, centralOffset + 10);
-      const compressedSize = getUint32(view, centralOffset + 20);
-      const nameLength = getUint16(view, centralOffset + 28);
-      const extraLength = getUint16(view, centralOffset + 30);
-      const commentLength = getUint16(view, centralOffset + 32);
-      const localOffset = getUint32(view, centralOffset + 42);
-      const name = decoder.decode(
-        bytes.slice(centralOffset + 46, centralOffset + 46 + nameLength),
-      );
-      const localNameLength = getUint16(view, localOffset + 26);
-      const localExtraLength = getUint16(view, localOffset + 28);
-      const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
-      const compressed = bytes.slice(dataOffset, dataOffset + compressedSize);
-      const data =
-        method === 0
-          ? compressed
-          : method === 8
-            ? await inflateZipEntry(compressed)
-            : null;
-      if (!data) throw new Error("Unsupported XLSX compression method.");
-      entries[name] = decoder.decode(data);
-      centralOffset += 46 + nameLength + extraLength + commentLength;
-    }
-    return entries;
+  function readZipEntries(buffer) {
+    return new Promise((resolve, reject) => {
+      unzip(new Uint8Array(buffer), (error, unzipped) => {
+        if (error) {
+          reject(new Error("Could not read this XLSX file."));
+          return;
+        }
+        try {
+          resolve(
+            Object.fromEntries(
+              Object.entries(unzipped).map(([name, data]) => [
+                name,
+                strFromU8(data),
+              ]),
+            ),
+          );
+        } catch {
+          reject(new Error("This XLSX file contains invalid spreadsheet data."));
+        }
+      });
+    });
   }
 
   function parseSharedStrings(xml) {

@@ -3,9 +3,11 @@ export function runSelfTests(deps) {
     LECTURER_CLASS_LIMIT,
     LECTURER_EXPORT_COLUMNS,
     USE_SUPABASE,
+    applyTableChanges,
     applyLecturerLabelChanges,
     availabilityTone,
     buildAutoPilotPlotting,
+    buildTableChanges,
     buildLecturerExportRows,
     buildLecturerTemplateRows,
     buildPlottingExportRows,
@@ -739,6 +741,32 @@ export function runSelfTests(deps) {
       normalizeCourseClassPlans(serializedPlans).TERM001.assignments
         .COURSE101[0] === "LECT001",
       "Course class plans should round-trip through Supabase rows",
+    );
+    const rowChanges = buildTableChanges(
+      [{ id: "A", name: "Original", phone: "100" }],
+      [{ id: "A", name: "Original", phone: "200" }],
+      "id",
+    );
+    console.assert(
+      rowChanges.creates.length === 0 &&
+        rowChanges.deletes.length === 0 &&
+        rowChanges.updates.length === 1 &&
+        Object.keys(rowChanges.updates[0].patch).join(",") === "phone",
+      "Row synchronization should patch only fields changed locally",
+    );
+    const replayedRows = applyTableChanges(
+      [
+        { id: "A", name: "Original", phone: "100" },
+        { id: "B", name: "Added elsewhere", phone: "300" },
+      ],
+      rowChanges,
+      "id",
+    );
+    console.assert(
+      replayedRows.length === 2 &&
+        replayedRows.find((row) => row.id === "A")?.phone === "200" &&
+        replayedRows.some((row) => row.id === "B"),
+      "Pending row changes should preserve records added by another client",
     );
     const demoSnapshot = cloneDemoSnapshot();
     console.assert(

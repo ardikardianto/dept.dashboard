@@ -41,6 +41,7 @@ export function createPlottingComponent(deps) {
     swapAssignmentSlots,
     toClassCount,
   } = deps;
+  const AUTO_PILOT_WORKER_TIMEOUT_MS = 15_000;
 
   function PlannedClassCountInput({ planned, max, onCommit }) {
     const [draft, setDraft] = useState(null);
@@ -95,18 +96,35 @@ export function createPlottingComponent(deps) {
 
     return new Promise((resolve, reject) => {
       let worker;
+      let settled = false;
+      let timeoutId;
+      const finishWorker = () => {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        worker?.terminate();
+      };
+      const fallBackToMainThread = () => {
+        if (settled) return;
+        settled = true;
+        finishWorker();
+        runAutoPilotOnMainThread(payload).then(resolve, reject);
+      };
       try {
         worker = new Worker(
           new URL("../workers/autoPilot.worker.js", import.meta.url),
           { type: "module" },
         );
       } catch {
-        runAutoPilotOnMainThread(payload).then(resolve, reject);
+        fallBackToMainThread();
         return;
       }
-      const finish = () => worker.terminate();
+      timeoutId = window.setTimeout(
+        fallBackToMainThread,
+        AUTO_PILOT_WORKER_TIMEOUT_MS,
+      );
       worker.onmessage = (event) => {
-        finish();
+        if (settled) return;
+        settled = true;
+        finishWorker();
         if (event.data.error) {
           reject(new Error(event.data.error));
           return;
@@ -115,10 +133,13 @@ export function createPlottingComponent(deps) {
       };
       worker.onerror = (event) => {
         event.preventDefault?.();
-        finish();
-        runAutoPilotOnMainThread(payload).then(resolve, reject);
+        fallBackToMainThread();
       };
-      worker.postMessage(payload);
+      try {
+        worker.postMessage(payload);
+      } catch {
+        fallBackToMainThread();
+      }
     });
   }
 
@@ -144,6 +165,7 @@ export function createPlottingComponent(deps) {
     const [autoPilotPreview, setAutoPilotPreview] = useState(null);
     const [autoPilotUndo, setAutoPilotUndo] = useState(null);
     const [autoPilotRunning, setAutoPilotRunning] = useState(false);
+    const [exportBusy, setExportBusy] = useState(false);
     const [selectedCourseCode, setSelectedCourseCode] = useState("");
     const [selectedLecturerId, setSelectedLecturerId] = useState("");
     const [classCountReduction, setClassCountReduction] = useState(null);
@@ -723,6 +745,29 @@ export function createPlottingComponent(deps) {
         event.target.value = "";
       }
     };
+    const runPlottingExport = async () => {
+      if (exportBusy) return;
+      setExportBusy(true);
+      setImportMessage("");
+      try {
+        const result = await exportPlottingToXLSX(
+          lecturers,
+          courses,
+          plannedCounts,
+          assignmentMap,
+        );
+        if (!result) throw new Error("There is no plotting data to export.");
+        setImportMessage(
+          result.cancelled
+            ? "Export cancelled."
+            : `Export started: ${result.filename}`,
+        );
+      } catch (error) {
+        setImportMessage(`Export failed: ${error.message || "Unknown error"}`);
+      } finally {
+        setExportBusy(false);
+      }
+    };
     const applyImportReview = () => {
       if (!importReview) return;
       setSwapUndo(null);
@@ -950,18 +995,12 @@ export function createPlottingComponent(deps) {
                 <Button
                   variant="secondary"
                   className="h-12 whitespace-nowrap px-4"
-                  onClick={() =>
-                    exportPlottingToXLSX(
-                      lecturers,
-                      courses,
-                      plannedCounts,
-                      assignmentMap,
-                    )
-                  }
-                  disabled={!plannedTotal}
+                  onClick={runPlottingExport}
+                  disabled={!plannedTotal || exportBusy}
+                  aria-busy={exportBusy}
                 >
                   <Icons.download className="h-4 w-4" />
-                  Export plotting XLSX
+                  {exportBusy ? "Preparing export..." : "Export plotting XLSX"}
                 </Button>
               </div>
             </div>
@@ -969,7 +1008,7 @@ export function createPlottingComponent(deps) {
         </Card>
         {importMessage && (
           <div
-            className={`flex flex-col gap-3 rounded-xl px-3 py-2 text-sm font-normal sm:flex-row sm:items-center sm:justify-between ${/^(Imported|Swapped|Restored)/.test(importMessage) ? "bg-[#dff3e6] text-[#315f45]" : "bg-[#fde2e2] text-[#8a3a3a]"}`}
+            className={`flex flex-col gap-3 rounded-xl px-3 py-2 text-sm font-normal sm:flex-row sm:items-center sm:justify-between ${/^(Imported|Swapped|Restored|Export started)/.test(importMessage) ? "bg-[#dff3e6] text-[#315f45]" : "bg-[#fde2e2] text-[#8a3a3a]"}`}
           >
             <span>{importMessage}</span>
             {swapUndo?.termCode === selectedTermCode && (

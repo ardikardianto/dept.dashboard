@@ -10,6 +10,50 @@ const ACCESS_TOKEN_STORAGE_KEY = "ut_supabase_access_token";
 const REFRESH_TOKEN_STORAGE_KEY = "ut_supabase_refresh_token";
 const ACCESS_TOKEN_EXPIRES_AT_STORAGE_KEY =
   "ut_supabase_access_token_expires_at";
+const SUPABASE_REQUEST_TIMEOUT_MS = 20_000;
+
+async function fetchTextWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+  let timedOut = false;
+  const abortFromExternalSignal = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", abortFromExternalSignal, {
+    once: true,
+  });
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, SUPABASE_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return { response, text: await response.text() };
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error(
+        "Supabase did not respond in time. Check the connection and try again.",
+      );
+      timeoutError.code = "REQUEST_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abortFromExternalSignal);
+  }
+}
+
+function parseResponseText(text) {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return text || null;
+  }
+}
 
 export function getAccessToken() {
   return localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) || "";
@@ -51,7 +95,7 @@ async function refreshAuthSession() {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY) || "";
   if (!refreshToken) throw new Error("Session expired. Please sign in again.");
   if (!refreshSessionPromise) {
-    refreshSessionPromise = fetch(
+    refreshSessionPromise = fetchTextWithTimeout(
       `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
       {
         method: "POST",
@@ -62,11 +106,11 @@ async function refreshAuthSession() {
         body: JSON.stringify({ refresh_token: refreshToken }),
       },
     )
-      .then(async (response) => {
-        const data = await response.json();
+      .then(({ response, text }) => {
+        const data = parseResponseText(text);
         if (!response.ok) {
           const error = new Error(
-            data.error_description || data.msg || "Session refresh failed.",
+            data?.error_description || data?.msg || "Session refresh failed.",
           );
           error.status = 401;
           throw error;
@@ -83,14 +127,11 @@ async function refreshAuthSession() {
 
 export async function supabaseRequest(path, options = {}, allowRefresh = true) {
   if (!USE_SUPABASE) throw new Error("Supabase is not configured.");
-  const response = await fetch(`${SUPABASE_URL}${path}`, options);
-  const text = await response.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text || null;
-  }
+  const { response, text } = await fetchTextWithTimeout(
+    `${SUPABASE_URL}${path}`,
+    options,
+  );
+  const data = parseResponseText(text);
   if (
     response.status === 401 &&
     allowRefresh &&
@@ -143,6 +184,176 @@ export async function upsertRows(table, rows, conflictKey) {
   });
 }
 
+function comparableValue(value) {
+  if (Array.isArray(value)) return value.map(comparableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, comparableValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function valuesEqual(left, right) {
+  return (
+    JSON.stringify(comparableValue(left)) ===
+    JSON.stringify(comparableValue(right))
+  );
+}
+
+export function buildTableChanges(baselineRows = [], rows = [], key) {
+  const baselineByKey = new Map(
+    baselineRows.map((row) => [row[key], row]),
+  );
+  const rowsByKey = new Map(rows.map((row) => [row[key], row]));
+  const creates = [];
+  const updates = [];
+
+  rows.forEach((row) => {
+    const keyValue = row[key];
+    const baseline = baselineByKey.get(keyValue);
+    if (!baseline) {
+      creates.push(row);
+      return;
+    }
+    const patch = Object.fromEntries(
+      Object.entries(row).filter(
+        ([field, value]) =>
+          field !== key && !valuesEqual(value, baseline[field]),
+      ),
+    );
+    if (Object.keys(patch).length) {
+      updates.push({
+        keyValue,
+        patch,
+        baseline: Object.fromEntries(
+          Object.keys(patch).map((field) => [field, baseline[field]]),
+        ),
+      });
+    }
+  });
+
+  return {
+    creates,
+    updates,
+    deletes: baselineRows
+      .map((row) => row[key])
+      .filter((keyValue) => !rowsByKey.has(keyValue)),
+  };
+}
+
+export function hasTableChanges(changes) {
+  return Boolean(
+    changes?.creates?.length ||
+      changes?.updates?.length ||
+      changes?.deletes?.length,
+  );
+}
+
+export function applyTableChanges(rows = [], changes = {}, key) {
+  const byKey = new Map(rows.map((row) => [row[key], row]));
+  (changes.deletes || []).forEach((keyValue) => byKey.delete(keyValue));
+  (changes.updates || []).forEach(({ keyValue, patch }) => {
+    const current = byKey.get(keyValue);
+    if (current) byKey.set(keyValue, { ...current, ...patch });
+  });
+  (changes.creates || []).forEach((row) => byKey.set(row[key], row));
+  return Array.from(byKey.values());
+}
+
+async function fetchRow(table, key, keyValue) {
+  const rows = await supabaseRequest(
+    `/rest/v1/${table}?${key}=eq.${encodeURIComponent(keyValue)}&select=*`,
+    { method: "GET", headers: supabaseHeaders() },
+  );
+  return Array.isArray(rows) ? rows[0] : null;
+}
+
+function syncConflict(table, keyValue, detail) {
+  const error = new Error(
+    `${table} record ${keyValue} ${detail} Refresh before trying again.`,
+  );
+  error.code = "SYNC_CONFLICT";
+  return error;
+}
+
+async function createRow(table, key, row) {
+  const keyValue = row[key];
+  const existing = await fetchRow(table, key, keyValue);
+  if (existing) {
+    const alreadySaved = Object.entries(row).every(([field, value]) =>
+      valuesEqual(existing[field], value),
+    );
+    if (alreadySaved) return;
+    throw syncConflict(table, keyValue, "was also created elsewhere.");
+  }
+  await supabaseRequest(`/rest/v1/${table}`, {
+    method: "POST",
+    headers: supabaseHeaders(),
+    body: JSON.stringify(row),
+  });
+}
+
+async function patchRow(table, key, keyValue, patch, baseline = {}) {
+  const existing = await fetchRow(table, key, keyValue);
+  if (!existing)
+    throw syncConflict(table, keyValue, "was removed by another administrator.");
+  const conflictingFields = Object.keys(patch).filter(
+    (field) =>
+      !valuesEqual(existing[field], baseline[field]) &&
+      !valuesEqual(existing[field], patch[field]),
+  );
+  if (conflictingFields.length) {
+    throw syncConflict(
+      table,
+      keyValue,
+      `has newer values for ${conflictingFields.join(", ")}.`,
+    );
+  }
+  if (
+    Object.entries(patch).every(([field, value]) =>
+      valuesEqual(existing[field], value),
+    )
+  )
+    return;
+  const rows = await supabaseRequest(
+    `/rest/v1/${table}?${key}=eq.${encodeURIComponent(keyValue)}&select=${key}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...supabaseHeaders({ preferReturn: true }),
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!Array.isArray(rows) || !rows.length) {
+    throw syncConflict(table, keyValue, "changed while it was being saved.");
+  }
+}
+
+export async function deleteRow(table, key, keyValue) {
+  return supabaseRequest(
+    `/rest/v1/${table}?${key}=eq.${encodeURIComponent(keyValue)}`,
+    { method: "DELETE", headers: supabaseHeaders() },
+  );
+}
+
+export async function syncTableChanges(table, changes, key) {
+  if (!hasTableChanges(changes)) return;
+  await Promise.all(changes.creates.map((row) => createRow(table, key, row)));
+  await Promise.all(
+    changes.updates.map(({ keyValue, patch, baseline }) =>
+      patchRow(table, key, keyValue, patch, baseline),
+    ),
+  );
+  await Promise.all(
+    changes.deletes.map((keyValue) => deleteRow(table, key, keyValue)),
+  );
+}
+
 function normalizeLecturerLabelPatch(patch = {}) {
   const labels = {};
   if (Object.hasOwn(patch, "rating")) {
@@ -184,41 +395,13 @@ export async function updateLecturerLabels(lecturerId, patch) {
   return saved;
 }
 
-async function deleteMissingRows(table, key, currentKeys) {
-  const existing = await supabaseRequest(`/rest/v1/${table}?select=${key}`, {
-    method: "GET",
-    headers: supabaseHeaders(),
-  });
-  const keep = new Set(currentKeys);
-  const staleKeys = existing
-    .map((row) => row[key])
-    .filter((value) => !keep.has(value));
-  await Promise.all(
-    staleKeys.map((value) =>
-      supabaseRequest(
-        `/rest/v1/${table}?${key}=eq.${encodeURIComponent(value)}`,
-        { method: "DELETE", headers: supabaseHeaders() },
-      ),
-    ),
-  );
-}
-
-export async function syncTable(table, rows, key) {
-  await upsertRows(table, rows, key);
-  await deleteMissingRows(
-    table,
-    key,
-    rows.map((row) => row[key]),
-  );
-}
-
 export async function signIn(email, password) {
   if (!USE_SUPABASE) {
     throw new Error(
       "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable access.",
     );
   }
-  const response = await fetch(
+  const { response, text } = await fetchTextWithTimeout(
     `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
     {
       method: "POST",
@@ -229,9 +412,9 @@ export async function signIn(email, password) {
       body: JSON.stringify({ email, password }),
     },
   );
-  const data = await response.json();
+  const data = parseResponseText(text);
   if (!response.ok)
-    throw new Error(data.error_description || data.msg || "Login failed.");
+    throw new Error(data?.error_description || data?.msg || "Login failed.");
   return saveAuthSession(data, email);
 }
 
@@ -264,14 +447,23 @@ export function getStoredPendingSync(userEmail) {
 
 export function storePendingSync(userEmail, payload) {
   if (typeof localStorage === "undefined" || !userEmail) return;
-  localStorage.setItem(
-    PENDING_SYNC_STORAGE_KEY,
-    JSON.stringify({
-      userEmail,
-      payload,
-      updatedAt: new Date().toISOString(),
-    }),
-  );
+  try {
+    localStorage.setItem(
+      PENDING_SYNC_STORAGE_KEY,
+      JSON.stringify({
+        userEmail,
+        payload,
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch (cause) {
+    const error = new Error(
+      "This device could not store a local backup of pending changes.",
+    );
+    error.code = "LOCAL_STORAGE_WRITE_FAILED";
+    error.cause = cause;
+    throw error;
+  }
 }
 
 export function clearPendingSync(userEmail) {
@@ -311,7 +503,19 @@ export function queueLecturerLabelChange(userEmail, lecturerId, patch) {
     changeId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     updatedAt: new Date().toISOString(),
   };
-  localStorage.setItem(lecturerLabelStorageKey(userEmail), JSON.stringify(changes));
+  try {
+    localStorage.setItem(
+      lecturerLabelStorageKey(userEmail),
+      JSON.stringify(changes),
+    );
+  } catch (cause) {
+    const error = new Error(
+      "This device could not queue the lecturer rating or note locally.",
+    );
+    error.code = "LOCAL_STORAGE_WRITE_FAILED";
+    error.cause = cause;
+    throw error;
+  }
   return changes;
 }
 
@@ -322,9 +526,18 @@ export function clearStoredLecturerLabelChanges(userEmail, savedChanges = {}) {
     if (changes[id]?.changeId === saved?.changeId) delete changes[id];
   });
   const key = lecturerLabelStorageKey(userEmail);
-  if (Object.keys(changes).length)
-    localStorage.setItem(key, JSON.stringify(changes));
-  else localStorage.removeItem(key);
+  try {
+    if (Object.keys(changes).length)
+      localStorage.setItem(key, JSON.stringify(changes));
+    else localStorage.removeItem(key);
+  } catch (cause) {
+    const error = new Error(
+      "Supabase saved the lecturer labels, but the local queue could not be updated.",
+    );
+    error.code = "LOCAL_STORAGE_WRITE_FAILED";
+    error.cause = cause;
+    throw error;
+  }
   return changes;
 }
 
@@ -332,9 +545,18 @@ export function discardStoredLecturerLabelChange(userEmail, lecturerId) {
   const changes = getStoredLecturerLabelChanges(userEmail);
   delete changes[String(lecturerId || "").trim()];
   const key = lecturerLabelStorageKey(userEmail);
-  if (Object.keys(changes).length)
-    localStorage.setItem(key, JSON.stringify(changes));
-  else localStorage.removeItem(key);
+  try {
+    if (Object.keys(changes).length)
+      localStorage.setItem(key, JSON.stringify(changes));
+    else localStorage.removeItem(key);
+  } catch (cause) {
+    const error = new Error(
+      "The pending lecturer label could not be removed from local storage.",
+    );
+    error.code = "LOCAL_STORAGE_WRITE_FAILED";
+    error.cause = cause;
+    throw error;
+  }
   return changes;
 }
 

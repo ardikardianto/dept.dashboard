@@ -584,6 +584,7 @@ export function createDirectoryFeatures(deps) {
     const [importMessage, setImportMessage] = useState("");
     const [importReview, setImportReview] = useState(null);
     const [importBusy, setImportBusy] = useState(false);
+    const [exportBusy, setExportBusy] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -680,6 +681,23 @@ export function createDirectoryFeatures(deps) {
       ],
     );
     const save = (item) => {
+      const existing = directoryById.get(item.id);
+      const labelPatch = {};
+      const nextRating = clampRating(item.rating);
+      const nextWarningNote = String(item.warning_note || "").trim();
+      if (!existing || nextRating !== clampRating(existing.rating))
+        labelPatch.rating = nextRating;
+      if (
+        !existing ||
+        nextWarningNote !== String(existing.warning_note || "").trim()
+      )
+        labelPatch.warning_note = nextWarningNote;
+      if (
+        Object.keys(labelPatch).length &&
+        onLecturerLabelChange?.(item.id, labelPatch) === false
+      )
+        return;
+
       const availableSlots = Math.max(
         0,
         Math.min(4, Number(item.available) || 0),
@@ -712,17 +730,13 @@ export function createDirectoryFeatures(deps) {
             )
           : [{ ...item, available: availableSlots, plotted: [] }, ...prev],
       );
-      onLecturerLabelChange?.(item.id, {
-        rating: clampRating(item.rating),
-        warning_note: String(item.warning_note || "").trim(),
-      });
       setModal(null);
     };
     const rateLecturer = (id, rating) => {
       const nextRating = clampRating(rating);
-      if (onLecturerLabelChange)
-        onLecturerLabelChange(id, { rating: nextRating });
-      else
+      if (onLecturerLabelChange) {
+        if (onLecturerLabelChange(id, { rating: nextRating }) === false) return;
+      } else
         setLecturers((prev) =>
           prev.map((lecturer) =>
             lecturer.id === id ? { ...lecturer, rating: nextRating } : lecturer,
@@ -962,10 +976,28 @@ export function createDirectoryFeatures(deps) {
       setMobileSearchOpen(true);
     };
     const remove = (id) => {
-      onDiscardLecturerLabelChange?.(id);
+      if (onDiscardLecturerLabelChange?.(id) === false) return;
       setLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
       setTermLecturers((prev) => prev.filter((lecturer) => lecturer.id !== id));
       setDeleteTarget(null);
+    };
+    const runExport = async (exporter) => {
+      if (exportBusy) return;
+      setExportBusy(true);
+      setImportMessage("");
+      try {
+        const result = await exporter();
+        if (!result) throw new Error("There is no data to export.");
+        setImportMessage(
+          result.cancelled
+            ? "Export cancelled."
+            : `Export started: ${result.filename}`,
+        );
+      } catch (error) {
+        setImportMessage(`Export failed: ${error.message || "Unknown error"}`);
+      } finally {
+        setExportBusy(false);
+      }
     };
     return (
       <div className="space-y-5">
@@ -977,9 +1009,14 @@ export function createDirectoryFeatures(deps) {
             className="hidden"
             onChange={handleImport}
           />
-          <Button variant="secondary" onClick={exportLecturerTemplateToXLSX}>
+          <Button
+            variant="secondary"
+            onClick={() => runExport(exportLecturerTemplateToXLSX)}
+            disabled={exportBusy}
+            aria-busy={exportBusy}
+          >
             <Icons.download className="h-4 w-4" />
-            Template
+            {exportBusy ? "Preparing..." : "Template"}
           </Button>
           <Button
             variant="secondary"
@@ -990,8 +1027,10 @@ export function createDirectoryFeatures(deps) {
           </Button>
           <Button
             variant="secondary"
-            onClick={() => exportLecturersToXLSX(rows, courses)}
-            disabled={rows.length === 0}
+            onClick={() =>
+              runExport(() => exportLecturersToXLSX(rows, courses))
+            }
+            disabled={rows.length === 0 || exportBusy}
           >
             <Icons.download className="h-4 w-4" />
             Export XLSX
@@ -1003,7 +1042,7 @@ export function createDirectoryFeatures(deps) {
         </div>
         {importMessage && (
           <p
-            className={`rounded-xl px-3 py-2 text-sm font-normal ${importMessage.startsWith("Imported") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}
+            className={`rounded-xl px-3 py-2 text-sm font-normal ${/^(Imported|Export started)/.test(importMessage) ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}
           >
             {importMessage}
           </p>

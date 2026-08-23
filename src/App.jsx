@@ -14,6 +14,8 @@ import {
 import {
   USE_SUPABASE,
   PENDING_LECTURER_LABELS_STORAGE_KEY,
+  applyTableChanges,
+  buildTableChanges,
   clearPendingSync,
   clearStoredLecturerLabelChanges,
   createDatabaseSnapshotTools,
@@ -26,7 +28,7 @@ import {
   signIn,
   signOut,
   storePendingSync,
-  syncTable,
+  syncTableChanges,
   updateLecturerLabels,
   upsertRows,
 } from "./lib/database.js";
@@ -995,6 +997,129 @@ function serializeLecturersForDatabase(lecturers, includeLabels = false) {
   });
 }
 
+function mergeRowsByKey(serverRows = [], localRows = [], key) {
+  const merged = new Map(serverRows.map((row) => [row[key], row]));
+  localRows.forEach((row) => merged.set(row[key], row));
+  return Array.from(merged.values());
+}
+
+function createSyncSnapshot({
+  lecturers = [],
+  courses = [],
+  terms = [],
+  termPlottings = [],
+  courseClassPlans = {},
+}) {
+  return {
+    lecturers: serializeLecturersForDatabase(lecturers, false),
+    courses,
+    terms,
+    termPlottings,
+    courseClassPlans: serializeCourseClassPlans(courseClassPlans, terms),
+  };
+}
+
+function buildSyncChanges(baseline, snapshot) {
+  return {
+    lecturers: buildTableChanges(
+      baseline?.lecturers,
+      snapshot.lecturers,
+      "id",
+    ),
+    courses: buildTableChanges(baseline?.courses, snapshot.courses, "code"),
+    terms: buildTableChanges(baseline?.terms, snapshot.terms, "code"),
+    termPlottings: buildTableChanges(
+      baseline?.termPlottings,
+      snapshot.termPlottings,
+      "id",
+    ),
+    courseClassPlans: buildTableChanges(
+      baseline?.courseClassPlans,
+      snapshot.courseClassPlans,
+      "term_code",
+    ),
+  };
+}
+
+function hasSyncChanges(changes = {}) {
+  return Object.values(changes).some(
+    (change) =>
+      change?.creates?.length ||
+      change?.updates?.length ||
+      change?.deletes?.length,
+  );
+}
+
+function restorePendingSnapshot(serverSnapshot, pendingPayload) {
+  if (pendingPayload?.version === 2 && pendingPayload.changes) {
+    const serverSyncSnapshot = createSyncSnapshot(serverSnapshot);
+    const restoredLecturerCore = applyTableChanges(
+      serverSyncSnapshot.lecturers,
+      pendingPayload.changes.lecturers,
+      "id",
+    );
+    return {
+      lecturers: mergeServerLecturerLabels(
+        restoredLecturerCore.map(normalizeLecturer),
+        serverSnapshot.lecturers,
+      ),
+      courses: applyTableChanges(
+        serverSnapshot.courses,
+        pendingPayload.changes.courses,
+        "code",
+      ),
+      terms: applyTableChanges(
+        serverSnapshot.terms,
+        pendingPayload.changes.terms,
+        "code",
+      ),
+      termPlottings: applyTableChanges(
+        serverSnapshot.termPlottings,
+        pendingPayload.changes.termPlottings,
+        "id",
+      ),
+      courseClassPlans: normalizeCourseClassPlans(
+        applyTableChanges(
+          serverSyncSnapshot.courseClassPlans,
+          pendingPayload.changes.courseClassPlans,
+          "term_code",
+        ),
+      ),
+    };
+  }
+
+  const legacy = pendingPayload || {};
+  return {
+    lecturers: mergeServerLecturerLabels(
+      mergeRowsByKey(
+        serverSnapshot.lecturers,
+        legacy.lecturers || [],
+        "id",
+      ),
+      serverSnapshot.lecturers,
+    ),
+    courses: mergeRowsByKey(
+      serverSnapshot.courses,
+      legacy.courses || [],
+      "code",
+    ),
+    terms: mergeRowsByKey(
+      serverSnapshot.terms,
+      legacy.terms || [],
+      "code",
+    ),
+    termPlottings: mergeRowsByKey(
+      serverSnapshot.termPlottings,
+      legacy.termPlottings || [],
+      "id",
+    ),
+    courseClassPlans: {
+      ...serverSnapshot.courseClassPlans,
+      ...(legacy.courseClassPlans || {}),
+    },
+  };
+}
+
 function applyLecturerLabelChanges(lecturers = [], changes = {}) {
   return lecturers.map((lecturer) => {
     const pending = changes[lecturer.id];
@@ -1095,9 +1220,11 @@ runSelfTests({
   LECTURER_CLASS_LIMIT,
   LECTURER_EXPORT_COLUMNS,
   USE_SUPABASE,
+  applyTableChanges,
   applyLecturerLabelChanges,
   availabilityTone,
   buildAutoPilotPlotting,
+  buildTableChanges,
   buildLecturerExportRows,
   buildLecturerTemplateRows,
   buildPlottingExportRows,
@@ -1910,6 +2037,8 @@ export default function App() {
   const syncPayloadRef = useRef(null);
   const syncRevisionRef = useRef(0);
   const syncedRevisionRef = useRef(0);
+  const syncBaselineRef = useRef(null);
+  const syncConflictRef = useRef(false);
   const syncTimerRef = useRef(null);
   const syncRetryDelayRef = useRef(SYNC_RETRY_INITIAL_DELAY);
   const handledSaveNowSignalRef = useRef(0);
@@ -1967,31 +2096,26 @@ export default function App() {
           fetchLecturerLabelColumnSupport(),
         ]);
         if (cancelled) return;
+        syncBaselineRef.current = createSyncSnapshot(snapshot);
         setCanSyncLecturerLabels(lecturerLabelsSupported);
         setCanSyncCourseClassPlans(snapshot.courseClassPlansSupported);
         const pendingSync = getStoredPendingSync(userEmail);
         const lecturerLabelChanges = getStoredLecturerLabelChanges(userEmail);
         setPendingLecturerLabelChanges(lecturerLabelChanges);
         if (pendingSync?.payload) {
-          applyDatabaseSnapshot(
-            {
-              ...pendingSync.payload,
-              lecturers: mergeServerLecturerLabels(
-                pendingSync.payload.lecturers,
-                snapshot.lecturers,
-              ),
-            },
-            lecturerLabelChanges,
+          const restoredSnapshot = restorePendingSnapshot(
+            snapshot,
+            pendingSync.payload,
           );
-          setCourseClassPlans(
-            pendingSync.payload.courseClassPlans || getStoredCourseClassPlans(),
-          );
+          applyDatabaseSnapshot(restoredSnapshot, lecturerLabelChanges);
+          setCourseClassPlans(restoredSnapshot.courseClassPlans);
         } else {
           applyDatabaseSnapshot(snapshot, lecturerLabelChanges);
-          setCourseClassPlans({
-            ...getStoredCourseClassPlans(),
-            ...snapshot.courseClassPlans,
-          });
+          setCourseClassPlans(
+            snapshot.courseClassPlansSupported
+              ? snapshot.courseClassPlans
+              : getStoredCourseClassPlans(),
+          );
         }
         setHydrated(true);
         const hasPendingLabels = Object.keys(lecturerLabelChanges).length > 0;
@@ -2083,33 +2207,63 @@ export default function App() {
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
     if (isDemoSession) return;
-    localStorage.setItem(
-      COURSE_CLASS_PLANS_STORAGE_KEY,
-      JSON.stringify(courseClassPlans),
-    );
-  }, [courseClassPlans, isDemoSession]);
+    let warningTimer;
+    try {
+      localStorage.setItem(
+        COURSE_CLASS_PLANS_STORAGE_KEY,
+        JSON.stringify(courseClassPlans),
+      );
+    } catch {
+      if (userEmail) {
+        warningTimer = window.setTimeout(() => {
+          setSyncState("error");
+          setDbStatus(
+            "This device could not store a local plotting backup. Keep the app open and use Save now.",
+          );
+        }, 0);
+      }
+    }
+    return () => window.clearTimeout(warningTimer);
+  }, [courseClassPlans, isDemoSession, userEmail]);
 
   const queueLecturerLabels = useCallback(
     (lecturerId, patch) => {
+      if (!isDemoSession && userEmail) {
+        try {
+          setPendingLecturerLabelChanges(
+            queueLecturerLabelChange(userEmail, lecturerId, patch),
+          );
+        } catch (error) {
+          setSyncState("error");
+          setDbStatus(
+            `${error.message || "The rating could not be queued locally."} The visible rating was not changed.`,
+          );
+          return false;
+        }
+      }
       setLecturers((prev) =>
         prev.map((lecturer) =>
           lecturer.id === lecturerId ? { ...lecturer, ...patch } : lecturer,
         ),
       );
-      if (isDemoSession || !userEmail) return;
-      setPendingLecturerLabelChanges(
-        queueLecturerLabelChange(userEmail, lecturerId, patch),
-      );
+      return true;
     },
     [isDemoSession, userEmail],
   );
 
   const discardLecturerLabels = useCallback(
     (lecturerId) => {
-      if (isDemoSession || !userEmail) return;
-      setPendingLecturerLabelChanges(
-        discardStoredLecturerLabelChange(userEmail, lecturerId),
-      );
+      if (isDemoSession || !userEmail) return true;
+      try {
+        setPendingLecturerLabelChanges(
+          discardStoredLecturerLabelChange(userEmail, lecturerId),
+        );
+        return true;
+      } catch (error) {
+        setSyncState("error");
+        setDbStatus(error.message || "The local label queue could not be updated.");
+        return false;
+      }
     },
     [isDemoSession, userEmail],
   );
@@ -2137,14 +2291,83 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", warnAboutPendingChanges);
   }, [pendingLecturerLabelChanges]);
 
-  useEffect(() => {
-    const wakeSync = () => {
+  const refreshDatabaseOnResume = useCallback(async () => {
+    if (
+      isDemoSession ||
+      !USE_SUPABASE ||
+      !userEmail ||
+      !hydratedRef.current ||
+      syncingRef.current
+    )
+      return;
+    if (
+      syncRevisionRef.current > syncedRevisionRef.current ||
+      Object.keys(pendingLecturerLabelChanges).length
+    ) {
+      if (syncConflictRef.current) return;
       syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
       setSyncWakeSignal((value) => value + 1);
+      return;
+    }
+
+    const revisionAtStart = syncRevisionRef.current;
+    try {
+      setDbStatus("Checking Supabase for newer changes...");
+      const snapshot = await fetchDatabaseSnapshot();
+      if (
+        syncingRef.current ||
+        revisionAtStart !== syncRevisionRef.current
+      )
+        return;
+      syncBaselineRef.current = createSyncSnapshot(snapshot);
+      applyDatabaseSnapshot(snapshot);
+      setCourseClassPlans(
+        snapshot.courseClassPlansSupported
+          ? snapshot.courseClassPlans
+          : getStoredCourseClassPlans(),
+      );
+      setCanSyncCourseClassPlans(snapshot.courseClassPlansSupported);
+      setSyncState("saved");
+      setDbStatus("All changes saved");
+    } catch (error) {
+      setSyncState(navigator.onLine ? "error" : "offline");
+      setDbStatus(
+        navigator.onLine
+          ? `${error.message || "Could not refresh Supabase data"}. Existing data has not been replaced.`
+          : "Offline. Existing data remains available on this device.",
+      );
+    }
+  }, [
+    applyDatabaseSnapshot,
+    isDemoSession,
+    pendingLecturerLabelChanges,
+    userEmail,
+  ]);
+
+  useEffect(() => {
+    let timer;
+    const resume = () => {
+      if (document.visibilityState === "hidden") return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refreshDatabaseOnResume, 150);
     };
-    window.addEventListener("online", wakeSync);
-    return () => window.removeEventListener("online", wakeSync);
-  }, []);
+    const handleOnline = () => {
+      syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
+      setSyncWakeSignal((value) => value + 1);
+      resume();
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("pageshow", resume);
+      document.removeEventListener("visibilitychange", resume);
+    };
+  }, [refreshDatabaseOnResume]);
 
   const activeTermCode = terms.find((term) => term.active)?.code || "";
   const effectiveSelectedTermCode = terms.some(
@@ -2161,25 +2384,49 @@ export default function App() {
     if (isDemoSession || !USE_SUPABASE || !userEmail || !hydratedRef.current)
       return undefined;
 
-    syncRevisionRef.current += 1;
-    syncPayloadRef.current = {
+    const snapshot = createSyncSnapshot({
       lecturers,
       courses,
       terms,
       termPlottings: validTermPlottings,
       courseClassPlans,
+    });
+    const baseline = syncBaselineRef.current || snapshot;
+    const changes = buildSyncChanges(baseline, snapshot);
+    const hasCoreChanges = hasSyncChanges(changes);
+    const hasPendingLabels = Object.keys(pendingLecturerLabelChanges).length > 0;
+    if (!hasCoreChanges && !hasPendingLabels) {
+      clearPendingSync(userEmail);
+      setSyncState("saved");
+      setDbStatus("All changes saved");
+      return undefined;
+    }
+
+    syncConflictRef.current = false;
+    syncRevisionRef.current += 1;
+    syncPayloadRef.current = {
+      snapshot,
+      changes,
       canSyncLecturerLabels,
       canSyncCourseClassPlans,
     };
-    storePendingSync(userEmail, {
-      ...syncPayloadRef.current,
-      lecturers: serializeLecturersForDatabase(lecturers, false),
-    });
+    let localBackupStored = true;
+    if (hasCoreChanges) {
+      try {
+        storePendingSync(userEmail, { version: 2, changes });
+      } catch {
+        localBackupStored = false;
+      }
+    }
     setSyncState(navigator.onLine ? "pending" : "offline");
     setDbStatus(
       navigator.onLine
-        ? "Unsaved changes queued"
-        : "Offline. Changes are safely queued on this device.",
+        ? localBackupStored
+          ? "Unsaved changes queued"
+          : "Local backup failed. Keep the app open while changes are uploaded."
+        : localBackupStored
+          ? "Offline. Changes are safely queued on this device."
+          : "Offline, and this device could not store a local backup. Keep the app open.",
     );
     const scheduledRevision = syncRevisionRef.current;
 
@@ -2190,7 +2437,11 @@ export default function App() {
       if (!payload || startedRevision <= syncedRevisionRef.current) return;
       if (!navigator.onLine) {
         setSyncState("offline");
-        setDbStatus("Offline. Changes are safely queued on this device.");
+        setDbStatus(
+          localBackupStored
+            ? "Offline. Changes are safely queued on this device."
+            : "Offline, and this device could not store a local backup. Keep the app open.",
+        );
         window.clearTimeout(syncTimerRef.current);
         syncTimerRef.current = window.setTimeout(
           runSync,
@@ -2204,30 +2455,28 @@ export default function App() {
       }
 
       let failed = false;
+      let conflicted = false;
       try {
         syncingRef.current = true;
         setSyncState("saving");
         setDbStatus("Saving changes...");
         await Promise.all([
-          syncTable(
-            "lecturers",
-            serializeLecturersForDatabase(payload.lecturers, false),
-            "id",
-          ),
-          syncTable("courses", payload.courses, "code"),
-          syncTable("academic_terms", payload.terms, "code"),
+          syncTableChanges("lecturers", payload.changes.lecturers, "id"),
+          syncTableChanges("courses", payload.changes.courses, "code"),
+          syncTableChanges("academic_terms", payload.changes.terms, "code"),
         ]);
         const dependentSyncOperations = [
-          syncTable("term_plottings", payload.termPlottings, "id"),
+          syncTableChanges(
+            "term_plottings",
+            payload.changes.termPlottings,
+            "id",
+          ),
         ];
         if (payload.canSyncCourseClassPlans) {
           dependentSyncOperations.push(
-            syncTable(
+            syncTableChanges(
               "course_class_plans",
-              serializeCourseClassPlans(
-                payload.courseClassPlans,
-                payload.terms,
-              ),
+              payload.changes.courseClassPlans,
               "term_code",
             ),
           );
@@ -2250,6 +2499,12 @@ export default function App() {
           );
           setPendingLecturerLabelChanges(remainingLabelChanges);
         }
+        syncBaselineRef.current = {
+          ...payload.snapshot,
+          courseClassPlans: payload.canSyncCourseClassPlans
+            ? payload.snapshot.courseClassPlans
+            : baseline.courseClassPlans,
+        };
         syncedRevisionRef.current = startedRevision;
         syncRetryDelayRef.current = SYNC_RETRY_INITIAL_DELAY;
         if (syncRevisionRef.current === startedRevision) {
@@ -2266,12 +2521,19 @@ export default function App() {
           );
         }
       } catch (error) {
-        failed = true;
+        conflicted = error.code === "SYNC_CONFLICT";
+        failed = !conflicted;
+        if (conflicted) syncConflictRef.current = true;
         setSyncState(navigator.onLine ? "error" : "offline");
         setDbStatus(
           navigator.onLine
-            ? `${error.message || "Database sync failed"}. Retrying automatically...`
-            : "Offline. Changes are safely queued on this device.",
+            ? conflicted
+              ? error.message ||
+                "A newer Supabase change was preserved. Review this record before saving again."
+              : `${error.message || "Database sync failed"}. Retrying automatically...`
+            : localBackupStored
+              ? "Offline. Changes are safely queued on this device."
+              : "Offline, and this device could not store a local backup. Keep the app open.",
         );
       } finally {
         syncingRef.current = false;
@@ -2285,7 +2547,10 @@ export default function App() {
             syncRetryDelayRef.current * 2,
             SYNC_RETRY_MAX_DELAY,
           );
-        } else if (syncRevisionRef.current > syncedRevisionRef.current) {
+        } else if (
+          !conflicted &&
+          syncRevisionRef.current > syncedRevisionRef.current
+        ) {
           window.clearTimeout(syncTimerRef.current);
           syncTimerRef.current = window.setTimeout(runSync, 0);
         }
@@ -2320,12 +2585,20 @@ export default function App() {
   ]);
 
   const handleLogin = (email) => {
+    syncBaselineRef.current = null;
+    syncConflictRef.current = false;
+    syncRevisionRef.current = 0;
+    syncedRevisionRef.current = 0;
     setHydrated(false);
     setSession({ userEmail: email, entryMode: "admin", isDemo: false });
   };
 
   const handleDemoLogin = () => {
     signOut();
+    syncBaselineRef.current = null;
+    syncConflictRef.current = false;
+    syncRevisionRef.current = 0;
+    syncedRevisionRef.current = 0;
     setActive("dashboard");
     setHydrated(false);
     setSession({
@@ -2337,6 +2610,10 @@ export default function App() {
 
   const handleLogout = () => {
     signOut();
+    syncBaselineRef.current = null;
+    syncConflictRef.current = false;
+    syncRevisionRef.current = 0;
+    syncedRevisionRef.current = 0;
     setHydrated(false);
     setSession({ userEmail: "", entryMode: "landing", isDemo: false });
     setLecturers([]);
